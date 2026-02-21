@@ -1,0 +1,26 @@
+<configuration>
+    <input>
+        <net-file value="atal.net.xml"/>
+        <route-files value="atal_v2v.rou.xml,atal_bridge_scenarios.rou.xml"/>
+    </input>
+    <time>
+        <begin value="0"/>
+        <end value="3600"/>
+        <step-length value="0.1"/>
+    </time>
+    <processing>
+        <lateral-resolution value="0.8"/>
+        <collision.action value="warn"/>
+        <collision.mingap-factor value="0"/>
+        <!-- Realistic driving behavior -->
+        <default.speeddev value="0.1"/>
+        <random-depart-offset value="3"/>
+    </processing>
+    <gui_only>
+        <start value="true"/>
+        <tracker-interval value="0.5"/>
+    </gui_only>
+    <report>
+        <no-warnings value="true"/>
+    </report>
+</configuration>
