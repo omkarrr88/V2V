@@ -1,7 +1,7 @@
 """
 V2V BSD Project — Run Everything
 =================================
-1. Run the SUMO simulation with V2.4 BSD engine
+1. Run the SUMO simulation with V3.0 BSD engine
 2. Launch the real-time dashboard
 
 Usage:
@@ -38,7 +38,7 @@ def main():
 
     print("=" * 70)
     print("🚀 V2V Blind Spot Detection System")
-    print("   Mathematical Model V2.4")
+    print("   Mathematical Model V3.0")
     print("=" * 70)
     print()
     print("1️⃣  Starting SUMO simulation...")

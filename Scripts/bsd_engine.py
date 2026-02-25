@@ -1,8 +1,8 @@
 """
-V2V Blind Spot Detection Engine — V2.4 Mathematical Model Implementation
+V2V Blind Spot Detection Engine — V3.0 Mathematical Model Implementation
 =========================================================================
 Direct implementation of the Comprehensive Mathematical Model for V2V BSD.
-Every formula, parameter, and edge case from the V2.4 spec is implemented here.
+Every formula, parameter, and edge case from the V3.0 spec is implemented here.
 
 Author: V2V BSD Research Project
 """
@@ -15,11 +15,11 @@ from enum import Enum
 
 
 # ============================================================
-# SECTION 8: Complete Parameter Reference (from V2.4 model)
+# SECTION 8: Complete Parameter Reference (from V3.0 model)
 # ============================================================
 
 class Params:
-    """All model parameters from Section 8 of V2.4 spec."""
+    """All model parameters from Section 8 of V3.0 spec."""
     # BSM & Communication
     F_BSM       = 10        # Hz — BSM broadcast frequency (SAE J2735 §1)
     DT          = 0.1       # s  — timestep (1/F_BSM)
@@ -58,9 +58,9 @@ class Params:
     V_LAT_MAX   = 1.0       # m/s — max lane-change lateral speed
 
     # CRI Weights (α + β + γ = 1.0)
-    ALPHA       = 0.35      # — R_decel weight
-    BETA        = 0.45      # — R_ttc weight
-    GAMMA       = 0.20      # — R_intent weight
+    ALPHA       = 0.15      # — R_decel weight (tuned via optimize_weights.py)
+    BETA        = 0.80      # — R_ttc weight
+    GAMMA       = 0.05      # — R_intent weight
     EPSILON     = 0.30      # — PLR penalty coefficient
 
     # Alert Thresholds
@@ -128,7 +128,7 @@ class SideState:
 
 class BSDEngine:
     """
-    V2V Blind Spot Detection Engine — V2.4 Mathematical Model.
+    V2V Blind Spot Detection Engine — V3.0 Mathematical Model.
     
     Implements every section of the mathematical model:
     - §2: Coordinate transformation (rotation matrix)
@@ -139,17 +139,27 @@ class BSDEngine:
     - §4.3: PLR formal definition
     - §5.1: R_decel with friction + aero drag
     - §5.2: R_ttc second-order with all edge cases
-    - §5.3: R_intent direction-aware with I_turn matching
+    - §5.2.1: Lateral Time-To-Collision (TTC_lat)
+     §5.3: R_intent direction-aware with Ego-only intent.
     - §6: CRI composition with PLR penalty
     - §7: Alert levels with per-side hysteresis
     """
 
-    def __init__(self):
+    def __init__(self, alpha=None, beta=None, gamma=None, use_lateral_ttc=True, sigma_gps=None, ttc_crit=None, theta_3=None):
         self.target_trackers: Dict[str, TargetTracker] = {}
         self.left_state = SideState()
         self.right_state = SideState()
         # Logging for dashboard
         self.last_computation = {}
+        
+        # Overrides for Ablation & Sensitivity Analysis
+        self.alpha = alpha if alpha is not None else Params.ALPHA
+        self.beta = beta if beta is not None else Params.BETA
+        self.gamma = gamma if gamma is not None else Params.GAMMA
+        self.use_lateral_ttc = use_lateral_ttc
+        self.sigma_gps = sigma_gps if sigma_gps is not None else Params.SIGMA_GPS
+        self.ttc_crit = ttc_crit if ttc_crit is not None else Params.TTC_CRIT
+        self.theta_3 = theta_3 if theta_3 is not None else Params.THETA_3
 
     # ============================================================
     # §2: COORDINATE TRANSFORMATION
@@ -226,21 +236,28 @@ class BSDEngine:
         x_outer = sgn(x̂) · (W_e/2 + W_lane)
         x_inner = sgn(x̂) · (W_e/2)
         """
-        sigma = Params.SIGMA_GPS
+        sigma = self.sigma_gps
         half_w = ego.width / 2.0
         L_bs = self._compute_L_bs(ego.speed)
         
-        sign = 1.0 if x_hat >= 0 else -1.0
-        x_outer = sign * (half_w + Params.W_LANE)
-        x_inner = sign * half_w
+        if x_hat >= 0:
+            x_inner = half_w
+            x_outer = half_w + Params.W_LANE
+        else:
+            x_inner = -(half_w + Params.W_LANE)
+            x_outer = -half_w
+        
         y_front = ego.length / 2.0
         y_rear = -L_bs
 
-        # P_lat with absolute value (fixes negative probability for left-side targets)
-        P_lat = abs(
-            norm.cdf((x_outer - x_hat) / sigma) -
-            norm.cdf((x_inner - x_hat) / sigma)
-        )
+        lower = min(x_inner, x_outer)
+        upper = max(x_inner, x_outer)
+        
+        P_lat = norm.cdf(upper, loc=x_hat, scale=sigma) - norm.cdf(lower, loc=x_hat, scale=sigma)
+        
+        # Guard against forward-lane targets throwing side alerts (zero-lateral offset)
+        if abs(x_hat) < half_w:
+            P_lat *= (abs(x_hat) / half_w) ** 2
         
         P_lon = (
             norm.cdf((y_front - y_hat) / sigma) -
@@ -252,25 +269,23 @@ class BSDEngine:
     # ============================================================
     # §4.2: DEAD RECKONING (CA-CYR model)
     # ============================================================
-    def _dead_reckon(self, state: VehicleState, tau_eff: float) -> Tuple[float, float, float]:
+    def _dead_reckon_rel(self, ego: VehicleState, target: VehicleState, tau_eff: float) -> Tuple[float, float, bool]:
         """
-        Predict target position after delay τ_eff using Constant Acceleration,
-        Constant Yaw Rate model.
-        
-        Returns predicted (x_global, y_global, heading).
+        Predict target relative position after delay τ_eff using the Constant Acceleration
+        kinematic model in the GLOBAL frame, then converting to EGO frame.
         """
-        theta = state.heading
-        v = state.speed
-        a = state.accel
-        yr = state.yaw_rate
-        dt = tau_eff
+        # Hard stale cap
+        if tau_eff > 0.5:
+            return 0.0, 0.0, True
 
-        # Position prediction
-        x_pred = state.x + (v + 0.5 * a * dt) * np.cos(theta + 0.5 * yr * dt) * dt
-        y_pred = state.y + (v + 0.5 * a * dt) * np.sin(theta + 0.5 * yr * dt) * dt
-        theta_pred = theta + yr * dt
+        # Extrapolate target position in GLOBAL frame
+        x_t_pred = target.x + target.speed * np.cos(target.heading) * tau_eff + 0.5 * target.accel * np.cos(target.heading) * (tau_eff ** 2)
+        y_t_pred = target.y + target.speed * np.sin(target.heading) * tau_eff + 0.5 * target.accel * np.sin(target.heading) * (tau_eff ** 2)
 
-        return x_pred, y_pred, theta_pred
+        # Transform to EGO frame
+        x_pred_rel, y_pred_rel = self._to_ego_frame(ego, x_t_pred, y_t_pred)
+
+        return x_pred_rel, y_pred_rel, False
 
     def _compute_tau_eff(self, tracker: TargetTracker) -> float:
         """τ_eff = τ_base + k_lost · Δt"""
@@ -339,15 +354,18 @@ class BSDEngine:
             return 1.0
         if D_stop_req <= 0:
             return 0.0
+        if not np.isfinite(D_stop_req):
+            # a_max = 0 → vehicle cannot brake at all → maximum risk
+            return 1.0
 
         ratio = (d_gap - D_stop_req) / D_stop_req
-        return min(1.0, np.exp(-Params.K_BRAKE * ratio))
+        return float(np.clip(np.exp(-Params.K_BRAKE * ratio), 0.0, 1.0))
 
     # ============================================================
     # §5.2: TIME-TO-COLLISION (R_ttc) — Second Order
     # ============================================================
     def _compute_R_ttc(self, ego: VehicleState, target: VehicleState,
-                       y_hat: float) -> float:
+                       y_hat: float) -> Tuple[float, float, float]:
         """
         Second-order TTC with all edge cases from Section 5.2.
         
@@ -367,17 +385,17 @@ class BSDEngine:
 
         # Case 1: vehicles separating
         if v_rel <= 0 and a_rel >= 0:
-            return 0.0  # TTC = ∞ → R_ttc = 0
+            return 0.0, 0.0, 0.0  # TTC = ∞ → R_ttc = 0
 
         # Case 2: near-zero acceleration (linear)
-        if abs(a_rel) < Params.EPS_A:
+        if abs(a_rel) < 1e-5:
             if v_rel > 0:
                 ttc = d_gap / v_rel
         else:
             # Case 3: quadratic — d_gap = v_rel·t + 0.5·a_rel·t²
             discriminant = v_rel ** 2 + 2.0 * a_rel * d_gap
             if discriminant < 0:
-                return 0.0  # trajectories diverge → R_ttc = 0
+                return 0.0, 0.0, 0.0  # trajectories diverge → R_ttc = 0
 
             sqrt_disc = np.sqrt(discriminant)
             t1 = (-v_rel + sqrt_disc) / a_rel
@@ -388,53 +406,53 @@ class BSDEngine:
             if candidates:
                 ttc = min(candidates)
             else:
-                return 0.0  # both negative → collision in past
+                return 0.0, 0.0, 0.0  # both negative → collision in past
 
         # TTC to risk score (Section 5.2 table)
         # R_ttc = 1.0                           if TTC ≤ TTC_crit
         #       = (TTC_crit / TTC)²             if TTC_crit < TTC ≤ TTC_max
         #       = 0.0                           otherwise
         if ttc > Params.TTC_MAX:
-            return 0.0
-        elif ttc <= Params.TTC_CRIT:
-            return 1.0
+            R_ttc_longitudinal = 0.0
+        elif ttc <= self.ttc_crit:
+            R_ttc_longitudinal = 1.0
         else:
-            return (Params.TTC_CRIT / ttc) ** 2
+            R_ttc_longitudinal = (self.ttc_crit / ttc) ** 2
+
+        # Lateral TTC
+        v_lat_rel = target.speed * np.sin(target.heading - ego.heading)
+        W_gap = Params.W_LANE - ego.width / 2.0 - target.width / 2.0
+        
+        if W_gap <= 0:
+            R_ttc_lateral = 1.0
+        elif not self.use_lateral_ttc or abs(v_lat_rel) < Params.EPS_V:
+            R_ttc_lateral = 0.0
+        else:
+            ttc_lat = W_gap / abs(v_lat_rel)
+            ttc_lat = np.clip(ttc_lat, 0.0, Params.TTC_MAX)
+            if ttc_lat <= self.ttc_crit:
+                R_ttc_lateral = 1.0 - ttc_lat / self.ttc_crit
+            else:
+                R_ttc_lateral = 0.0
+
+        return max(R_ttc_longitudinal, R_ttc_lateral), R_ttc_longitudinal, R_ttc_lateral
 
     # ============================================================
     # §5.3: LATERAL INTENT (R_intent) — Direction-Aware
     # ============================================================
-    def _compute_R_intent(self, ego: VehicleState, side: str) -> float:
+    def _compute_R_intent(self, ego: VehicleState, target: VehicleState, side: str) -> float:
         """
-        R_intent = w_sig · I_turn + w_lat · min(1, v_lat_toward / v_lat_max)
-        
-        I_turn: direction-matched Boolean (§5.3 piecewise)
-        v_lat_toward: only drift TOWARD threat side (corrected signs from V2.3)
+        R_intent captures only the Ego vehicle's lane-change intent (turn signal, lateral drift).
         """
-        # I_turn: direction-matched Boolean
+        # Ego Intent
         right_blinker = bool(ego.signals & 0x01)
         left_blinker = bool(ego.signals & 0x02)
+        I_turn = 1.0 if (side == "RIGHT" and right_blinker) or (side == "LEFT" and left_blinker) else 0.0
 
-        if side == "RIGHT" and right_blinker:
-            I_turn = 1.0
-        elif side == "LEFT" and left_blinker:
-            I_turn = 1.0
-        else:
-            I_turn = 0.0
-
-        # v_lat,e = v_e · sin(θ̇_e · Δt)
         v_lat_e = ego.speed * np.sin(ego.yaw_rate * Params.DT)
-
-        # v_lat_toward: direction-aware (V2.3 sign fix)
-        # LEFT turn (CCW) → θ̇ > 0 → v_lat_e > 0 → toward LEFT threat
-        # RIGHT turn (CW) → θ̇ < 0 → v_lat_e < 0 → toward RIGHT threat
-        if side == "LEFT":
-            v_lat_toward = max(0.0, v_lat_e)    # positive v_lat_e = drifting left
-        else:  # RIGHT
-            v_lat_toward = max(0.0, -v_lat_e)   # negative v_lat_e = drifting right → negate
-
+        v_lat_toward = max(0.0, v_lat_e) if side == "LEFT" else max(0.0, -v_lat_e)
         lat_ratio = min(1.0, v_lat_toward / Params.V_LAT_MAX) if Params.V_LAT_MAX > 0 else 0.0
-
+        
         return Params.W_SIG * I_turn + Params.W_LAT * lat_ratio
 
     # ============================================================
@@ -450,13 +468,30 @@ class BSDEngine:
         
         Returns dict with all intermediate values for dashboard logging.
         """
-        # Dead reckoning
+        # Dead reckoning directly in ego frame (Section 4.2)
         tau_eff = self._compute_tau_eff(tracker)
         stale = self._is_stale(tracker)
-        x_pred, y_pred, _ = self._dead_reckon(target, tau_eff)
-
-        # Transform to ego frame
-        x_rel, y_rel = self._to_ego_frame(ego, x_pred, y_pred)
+        x_rel, y_rel, is_hard_stale = self._dead_reckon_rel(ego, target, tau_eff)
+        
+        if is_hard_stale:
+            return {
+                'target_vid': target.vid,
+                'side': 'UNKNOWN',
+                'cri': 0.0,
+                'P': 0.0,
+                'R_decel': 0.0,
+                'R_ttc': 0.0,
+                'R_intent': 0.0,
+                'R_weighted': 0.0,
+                'plr': self._compute_plr(tracker),
+                'plr_multiplier': 1.0,
+                'tau_eff': tau_eff,
+                'stale': True,
+                'in_zone': False,
+                'x_rel': x_rel,
+                'y_rel': y_rel,
+                'd_gap': 0.0,
+            }
 
         # Curvature correction
         x_corrected = self._curvature_correction(ego, x_rel, y_rel)
@@ -472,11 +507,11 @@ class BSDEngine:
 
         # Risk components
         R_decel = self._compute_R_decel(ego, target, y_rel)
-        R_ttc = self._compute_R_ttc(ego, target, y_rel)
-        R_intent = self._compute_R_intent(ego, side)
+        R_ttc, R_ttc_lon, R_ttc_lat = self._compute_R_ttc(ego, target, y_rel)
+        R_intent = self._compute_R_intent(ego, target, side)
 
         # Weighted risk
-        R_weighted = Params.ALPHA * R_decel + Params.BETA * R_ttc + Params.GAMMA * R_intent
+        R_weighted = self.alpha * R_decel + self.beta * R_ttc + self.gamma * R_intent
 
         # PLR penalty
         plr = self._compute_plr(tracker)
@@ -492,6 +527,8 @@ class BSDEngine:
             'P': P,
             'R_decel': R_decel,
             'R_ttc': R_ttc,
+            'R_ttc_lon': R_ttc_lon,
+            'R_ttc_lat': R_ttc_lat,
             'R_intent': R_intent,
             'R_weighted': R_weighted,
             'plr': plr,
@@ -509,7 +546,7 @@ class BSDEngine:
     # ============================================================
     def _cri_to_level(self, cri: float) -> AlertLevel:
         """Raw CRI to alert level (no hysteresis)."""
-        if cri >= Params.THETA_3:
+        if cri >= self.theta_3:
             return AlertLevel.CRITICAL
         elif cri >= Params.THETA_2:
             return AlertLevel.WARNING
@@ -541,7 +578,7 @@ class BSDEngine:
                 side_state.pending_level = None
         elif raw_level.value < current.value:
             # Check downgrade with hysteresis band
-            thresholds = [0, Params.THETA_1, Params.THETA_2, Params.THETA_3]
+            thresholds = [0, Params.THETA_1, Params.THETA_2, self.theta_3]
             threshold = thresholds[current.value]
             if cri < threshold - Params.DELTA_H:
                 side_state.current_level = raw_level

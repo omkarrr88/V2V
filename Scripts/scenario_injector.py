@@ -42,17 +42,25 @@ def _safe_add_vehicle(vid: str, route_id: str, edge: str, lane: int,
                        pos: float, speed: float, vtype: str = "DEFAULT_VEHTYPE") -> bool:
     """Safely add a vehicle. Returns True if successfully added."""
     try:
-        # Create route if needed
         try:
             traci.route.add(route_id, [edge])
-        except traci.exceptions.TraCIException:
-            pass  # Route already exists
+        except:
+            pass
         
-        traci.vehicle.add(vid, route_id, departLane=str(lane), 
-                         departPos=str(pos), departSpeed=str(speed),
+        # Validate lane exists, fallback to "best"
+        dept_lane = "best"
+        if isinstance(lane, int) and lane >= 0:
+            try:
+                traci.lane.getLength(f"{edge}_{lane}")
+                dept_lane = str(lane)
+            except:
+                dept_lane = "best"
+        
+        traci.vehicle.add(vid, route_id, departLane=dept_lane, 
+                         departPos=str(max(0, pos)), departSpeed=str(max(1, speed)),
                          typeID=vtype)
         return True
-    except traci.exceptions.TraCIException:
+    except:
         return False
 
 
@@ -367,148 +375,129 @@ def _inject_multi_vehicle_bs(step: int, net) -> List[dict]:
     return results
 
 
-def force_vehicle_interactions(step: int):
+def force_vehicle_interactions(step: int, net=None):
     """
-    Called every step to maintain active scenario vehicles' behaviors.
-    Also force-spawns companion vehicles right into blind spots of existing
-    vehicles on multi-lane edges to guarantee all alert levels are visible.
+    Called periodically to maintain active scenario vehicles' behaviors.
+    Also force-spawns companion vehicles into blind spots.
+    
+    PERFORMANCE: Uses net object for lane counts (zero TraCI overhead).
     """
     try:
         vehicles = traci.vehicle.getIDList()
         
-        # ── Part 1: Maintain existing scenario vehicles ──
+        # Part 1: Maintain existing scenario vehicles (lightweight)
         for vid in vehicles:
             if not vid.startswith("bsd_test_"):
                 continue
             
-            # Periodically toggle signals on scenario vehicles for intent testing
             if step % 50 == 0 and np.random.random() < 0.3:
                 try:
-                    signal = np.random.choice([0, 1, 2])  # none, right, left
-                    traci.vehicle.setSignals(vid, signal)
+                    traci.vehicle.setSignals(vid, np.random.choice([0, 1, 2]))
                 except:
                     pass
             
-            # Force speed changes to create closing/separating
             if step % 30 == 0 and np.random.random() < 0.3:
                 try:
-                    current_speed = traci.vehicle.getSpeed(vid)
-                    delta = np.random.uniform(-5, 5)
-                    new_speed = max(5, min(35, current_speed + delta))
-                    traci.vehicle.setSpeed(vid, new_speed)
+                    speed = traci.vehicle.getSpeed(vid)
+                    traci.vehicle.setSpeed(vid, max(5, min(35, speed + np.random.uniform(-5, 5))))
                 except:
                     pass
 
-        # ── Part 2: Force blind spot companions on existing vehicles ──
-        # Every 100 steps (10 seconds), find vehicles on multi-lane edges
-        # and force-spawn a companion in their blind spot
-        if step % 100 == 0 and step >= 100:
-            _force_spawn_blind_spot_companions(step, vehicles)
+        # Part 2: Force blind spot companions (less frequently)
+        if step % 500 == 0 and step >= 200 and net is not None:
+            _force_spawn_blind_spot_companions(step, vehicles, net)
             
     except:
         pass
 
 
-def _force_spawn_blind_spot_companions(step: int, vehicles: list):
-    """
-    Find existing vehicles on multi-lane edges and spawn companions
-    directly in their blind spot zones to force CRI elevation.
-    """
-    spawned = 0
-    max_spawns = 3  # Max per cycle
+# Cache for edge lane counts (built once from net object)
+_edge_lane_cache = {}
 
-    for vid in vehicles:
+def _get_lane_count(edge_id: str, net) -> int:
+    """Get lane count for edge from net object (no TraCI calls)."""
+    global _edge_lane_cache
+    if not _edge_lane_cache and net is not None:
+        for e in net.getEdges():
+            _edge_lane_cache[e.getID()] = e.getLaneNumber()
+    return _edge_lane_cache.get(edge_id, 1)
+
+
+def _force_spawn_blind_spot_companions(step: int, vehicles: list, net):
+    """
+    Spawn companions in blind spots of existing vehicles on multi-lane edges.
+    Uses net object for lane counting (zero TraCI overhead).
+    """
+    if not vehicles:
+        return
+    
+    spawned = 0
+    max_spawns = 3  # Only spawn a few per call
+    
+    # Sample random vehicles to check (don't iterate all)
+    check_list = list(vehicles)
+    np.random.shuffle(check_list)
+    
+    for vid in check_list[:20]:  # Check at most 20 vehicles
         if spawned >= max_spawns:
             break
         if vid.startswith("bsd_test_"):
-            continue  # Skip existing test vehicles
+            continue
         
         try:
-            # Get vehicle's edge and lane
             edge_id = traci.vehicle.getRoadID(vid)
             if edge_id.startswith(":"):
-                continue  # Skip junctions
+                continue
             
-            lane_id = traci.vehicle.getLaneID(vid)
+            lane_count = _get_lane_count(edge_id, net)
+            if lane_count < 2:
+                continue
+            
             lane_idx = traci.vehicle.getLaneIndex(vid)
-            
-            # Check if edge has multiple lanes safely using net object if possible
-            # Fallback to TraCI check
-            lane_count = 0
-            try:
-                # Use a more reliable way to count lanes
-                for i in range(8):
-                    try:
-                        traci.lane.getLength(f"{edge_id}_{i}")
-                        lane_count = i + 1
-                    except:
-                        break
-            except:
-                continue
-            
-            # Get target vehicle position
-            try:
-                pos = traci.vehicle.getPosition(vid)
-                speed = traci.vehicle.getSpeed(vid)
-                angle = traci.vehicle.getAngle(vid)
-                lane_pos = traci.vehicle.getLanePosition(vid)
-            except:
-                continue
+            speed = traci.vehicle.getSpeed(vid)
+            lane_pos = traci.vehicle.getLanePosition(vid)
             
             if speed < 2.0:
-                continue  # Skip stopped vehicles
+                continue
             
-            # Determine which adjacent lane to use safely
+            # Pick adjacent lane
             target_lane = 1 if lane_idx == 0 else lane_idx - 1
-            if target_lane >= lane_count or target_lane < 0:
-                target_lane = "best"
+            if target_lane >= lane_count:
+                target_lane = lane_count - 1
             
-            # Spawn companion in different blind spot positions based on step
+            # Vary scenario
             scenario = (step // 100) % 4
             companion_vid = _next_id()
             companion_route = f"route_sc_{companion_vid}"
             
             try:
                 traci.route.add(companion_route, [edge_id])
-            except: pass
+            except:
+                pass
             
             if scenario == 0:
-                # Adjacent cruise — right beside, slightly behind
                 offset_pos = max(10, lane_pos - 3)
-                offset_speed = speed - 1
+                offset_speed = max(3, speed - 1)
             elif scenario == 1:
-                # High speed approach — behind, faster
                 offset_pos = max(10, lane_pos - 12)
-                offset_speed = speed + 10
+                offset_speed = max(3, speed + 10)
             elif scenario == 2:
-                # Very close — nearly touching
                 offset_pos = max(10, lane_pos - 1)
-                offset_speed = speed - 2
+                offset_speed = max(3, speed - 2)
             else:
-                # Matching speed, blind spot overlap
                 offset_pos = max(10, lane_pos - 4)
-                offset_speed = speed
+                offset_speed = max(3, speed)
             
             try:
                 traci.vehicle.add(
                     companion_vid, companion_route,
-                    departLane=str(target_lane) if isinstance(target_lane, int) else target_lane,
+                    departLane="best",  # Always "best" to avoid lane errors
                     departPos=str(offset_pos),
-                    departSpeed=str(max(3, offset_speed)),
+                    departSpeed=str(offset_speed),
                 )
-                
-                if scenario == 2:
-                    try:
-                        if isinstance(target_lane, int) and target_lane > lane_idx:
-                            traci.vehicle.setSignals(vid, 1)
-                        else:
-                            traci.vehicle.setSignals(vid, 2)
-                    except: pass
-                
                 spawned += 1
             except:
                 pass
                 
         except:
             continue
-

@@ -1,206 +1,225 @@
 """
-V2V BSD — Route Generator for All-Road Coverage
-====================================================
-Generates additional vehicles targeting multi-lane edges (Atal Setu bridge)
-with multi-edge routes so vehicles actually drive through and interact.
+V2V BSD — Route Generator with GUARANTEED Blind Spot Scenarios
+================================================================
+Creates routes that FORCE vehicles into adjacent lanes on multi-lane roads,
+ensuring the BSD engine will detect blind spot situations naturally.
 
-Also ensures ALL roads in the network have traffic — no road should remain
-empty for extended periods. Vehicles move in BOTH directions on all roads.
+KEY INSIGHT: departLane="best" puts all vehicles in the same lane.
+We must use departLane="0" and departLane="1" with offset times to create
+side-by-side driving that triggers blind spot detection.
 
-Real-life scenario: Mixed traffic (sedans, SUVs, trucks) with varied departure
-speeds and different vehicle types for realistic V2V communication scenarios.
+TIMING: 3600 steps × 0.1s = 360s simulation time.
+All departures must be in [0, 355].
 """
 import os
 import sys
 import random
 import numpy as np
 
-# Add SUMO tools to path
 if 'SUMO_HOME' in os.environ:
     sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 import sumolib
 
 
 def generate_comprehensive_routes():
-    """
-    Generate route file with:
-    1. Dense traffic on multi-lane bridge edges (blind spot scenarios)
-    2. Coverage of ALL edges in the network (no empty roads)
-    3. Mixed vehicle types (sedan, SUV, truck)
-    4. Bidirectional traffic
-    5. Varied speeds and departure intervals
-    """
     net = sumolib.net.readNet("../Maps/atal.net.xml")
     all_edges = [e for e in net.getEdges() if not e.getID().startswith(":")]
     
-    # Categorize edges
     multi_lane_edges = [e for e in all_edges if e.getLaneNumber() >= 2 and e.getLength() > 50]
     single_lane_edges = [e for e in all_edges if e.getLaneNumber() == 1 and e.getLength() > 20]
-    long_edges = [e for e in all_edges if e.getLength() > 200]
     
     print(f"Network: {len(all_edges)} total edges")
     print(f"  Multi-lane: {len(multi_lane_edges)}")
     print(f"  Single-lane: {len(single_lane_edges)}")
-    print(f"  Long (>200m): {len(long_edges)}")
     
-    # Build adjacency for multi-edge routes
-    def find_route_from_edge(start_edge, min_length=2, max_length=8):
-        """Find a valid multi-edge route starting from the given edge."""
+    MAX_TIME = 350
+    
+    def find_route(start_edge, min_len=2, max_len=6):
         route = [start_edge]
         current = start_edge
         visited = {start_edge.getID()}
-        
-        for _ in range(max_length - 1):
-            outgoing = current.getOutgoing()
-            next_edges = []
-            for conn_edge in outgoing:
-                if conn_edge.getID() not in visited and not conn_edge.getID().startswith(":"):
-                    next_edges.append(conn_edge)
-            
+        for _ in range(max_len - 1):
+            next_edges = [e for e in current.getOutgoing()
+                          if e.getID() not in visited and not e.getID().startswith(":")]
             if not next_edges:
                 break
-            
-            # Prefer longer edges and multi-lane edges
-            weights = []
-            for e in next_edges:
-                w = 1.0
-                if e.getLaneNumber() >= 2:
-                    w *= 3.0  # Prefer multi-lane
-                if e.getLength() > 200:
-                    w *= 2.0  # Prefer long edges
-                weights.append(w)
-            
+            weights = [3.0 if e.getLaneNumber() >= 2 else 1.0 for e in next_edges]
             total = sum(weights)
-            weights = [w/total for w in weights]
-            chosen = random.choices(next_edges, weights=weights, k=1)[0]
+            chosen = random.choices(next_edges, weights=[w/total for w in weights], k=1)[0]
             route.append(chosen)
             visited.add(chosen.getID())
             current = chosen
-            
-            if len(route) >= min_length:
-                if random.random() < 0.3:  # 30% chance to stop extending
-                    break
-        
+            if len(route) >= min_len and random.random() < 0.3:
+                break
         return route
     
-    routes_xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
-    routes_xml += '<routes>\n\n'
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n<routes>\n\n'
     
-    # ──── Vehicle Types ────
-    routes_xml += '    <!-- Vehicle Types for realistic traffic mix -->\n'
-    routes_xml += '    <vType id="sedan_v2v" length="4.5" width="1.8" maxSpeed="33.33" '
-    routes_xml += 'accel="2.6" decel="4.5" sigma="0.5" color="0,200,0"/>\n'
-    routes_xml += '    <vType id="suv_v2v" length="4.8" width="2.0" maxSpeed="30.56" '
-    routes_xml += 'accel="2.2" decel="4.0" sigma="0.5" color="0,200,0"/>\n'
-    routes_xml += '    <vType id="truck_v2v" length="12.0" width="2.5" maxSpeed="25.0" '
-    routes_xml += 'accel="1.0" decel="3.0" sigma="0.5" color="0,200,0"/>\n\n'
+    # Vehicle types
+    xml += '    <vType id="sedan" length="4.5" width="1.8" maxSpeed="33.33" accel="2.6" decel="4.5" sigma="0.5" color="0,200,0"/>\n'
+    xml += '    <vType id="suv" length="4.8" width="2.0" maxSpeed="30.56" accel="2.2" decel="4.0" sigma="0.5" color="0,200,0"/>\n'
+    xml += '    <vType id="truck" length="12.0" width="2.5" maxSpeed="25.0" accel="1.0" decel="3.0" sigma="0.5" color="0,200,0"/>\n\n'
     
-    vid_counter = 0
-    vtypes = ['sedan_v2v', 'suv_v2v', 'truck_v2v']
-    vtype_weights = [0.65, 0.25, 0.10]  # Realistic distribution
+    vid = 0
+    vtypes = ['sedan', 'suv', 'truck']
+    vweights = [0.65, 0.25, 0.10]
     
-    # Phase 1: High-density multi-lane bridge traffic (Blind spot generation)
-    # 3-second departures across ALL multi-lane edges over 1 hour
-    routes_xml += '    <!-- Phase 1: High-density bridge traffic -->\n'
+    # ================================================================
+    # PHASE 1: BLIND SPOT PAIRS — Two vehicles in adjacent lanes
+    # This is the KEY phase that creates actual blind spot detections!
+    # ================================================================
+    xml += '    <!-- PHASE 1: Blind Spot Pairs (adjacent lanes, offset timing) -->\n'
+    
+    # Build routes that ONLY use multi-lane edges (so lane 1 always exists)
+    def find_multilane_route(start_edge, min_len=2, max_len=5):
+        """Route where ALL edges have 2+ lanes."""
+        route = [start_edge]
+        current = start_edge
+        visited = {start_edge.getID()}
+        for _ in range(max_len - 1):
+            next_edges = [e for e in current.getOutgoing()
+                          if e.getID() not in visited 
+                          and not e.getID().startswith(":")
+                          and e.getLaneNumber() >= 2]  # ONLY multi-lane successors!
+            if not next_edges:
+                break
+            chosen = random.choice(next_edges)
+            route.append(chosen)
+            visited.add(chosen.getID())
+            current = chosen
+            if len(route) >= min_len:
+                break
+        return route
     
     for ml_edge in multi_lane_edges:
-        route = find_route_from_edge(ml_edge, min_length=2, max_length=6)
-        if len(route) < 2:
-            continue
+        route = find_multilane_route(ml_edge, min_len=1, max_len=4)
+        # Single-edge routes are fine — we just need 2+ lanes
         
-        route_edges = " ".join(e.getID() for e in route)
-        route_id = f"ml_route_{vid_counter}"
-        routes_xml += f'    <route id="{route_id}" edges="{route_edges}"/>\n'
-        
+        route_str = " ".join(e.getID() for e in route)
         nlanes = ml_edge.getLaneNumber()
-        # High volume: Every 3 seconds
-        for t in range(0, 3600, 3):
-            vtype = random.choices(vtypes, weights=vtype_weights, k=1)[0]
-            # Primary lane vehicle
-            routes_xml += (f'    <vehicle id="ml_{vid_counter}" route="{route_id}" '
-                          f'type="{vtype}" depart="{t}" departLane="best" '
-                          f'departPos="random" departSpeed="max"/>\n')
-            vid_counter += 1
+        
+        # Create PAIRS every 4 seconds — perfect overtaking scenarios
+        # One starts 20m ahead but slower. The other starts at 0m but faster.
+        # This guarantees they will sweep through each other's blind spots.
+        for t in range(0, MAX_TIME, 4):
+            rid = f"bsp_r{vid}"
+            xml += f'    <route id="{rid}" edges="{route_str}"/>\n'
             
-            # Secondary lane vehicle (creates blind spot pairing)
-            if nlanes >= 2:
-                vtype2 = random.choices(vtypes, weights=vtype_weights, k=1)[0]
-                routes_xml += (f'    <vehicle id="ml_{vid_counter}" route="{route_id}" '
-                              f'type="{vtype2}" depart="{t + 0.5}" departLane="best" '
-                              f'departPos="random" departSpeed="max"/>\n')
-                vid_counter += 1
+            # 50% chance: Lane 0 is slow, Lane 1 is fast (Left-side overtake)
+            # 50% chance: Lane 1 is slow, Lane 0 is fast (Right-side overtake)
+            if random.random() < 0.5:
+                l_slow, l_fast = 0, 1
+            else:
+                l_slow, l_fast = 1, 0
+            
+            # Vehicle A (Slow, ahead)
+            vt1 = random.choices(vtypes, weights=vweights, k=1)[0]
+            xml += (f'    <vehicle id="bsp_{vid}" route="{rid}" type="{vt1}" '
+                   f'depart="{t}" departLane="{l_slow}" departPos="20" departSpeed="15" maxSpeed="15"/>\n')
+            vid += 1
+            
+            # Vehicle B (Fast, behind, catching up)
+            vt2 = random.choices(vtypes, weights=vweights, k=1)[0]
+            xml += (f'    <vehicle id="bsp_{vid}" route="{rid}" type="{vt2}" '
+                   f'depart="{t}" departLane="{l_fast}" departPos="0" departSpeed="20" maxSpeed="20"/>\n')
+            vid += 1
+            
+            # If 3+ lanes, third vehicle in lane 2
+            if nlanes >= 3 and random.random() < 0.3:
+                vt3 = random.choices(vtypes, weights=vweights, k=1)[0]
+                xml += (f'    <vehicle id="bsp_{vid}" route="{rid}" type="{vt3}" '
+                       f'depart="{t}" departLane="2" departPos="10" departSpeed="18"/>\n')
+                vid += 1
     
-    # Phase 2: Full network coverage (High density)
-    routes_xml += '\n    <!-- Phase 2: Comprehensive coverage traffic -->\n'
-    for edge in all_edges:
-        route = find_route_from_edge(edge, min_length=2, max_length=5)
+    # ================================================================
+    # PHASE 2: CLOSING SCENARIOS — Fast car catching slow car
+    # Creates high R_ttc values (approaching from behind in adjacent lane)
+    # ================================================================
+    xml += '\n    <!-- PHASE 2: Closing scenarios (fast behind slow in adjacent lane) -->\n'
+    
+    for ml_edge in multi_lane_edges[:15]:  # Top 15 multi-lane edges
+        route = find_route(ml_edge, min_len=3, max_len=6)
         if len(route) < 2:
             continue
         
-        route_edges = " ".join(e.getID() for e in route)
-        route_id = f"cov_route_{vid_counter}"
-        routes_xml += f'    <route id="{route_id}" edges="{route_edges}"/>\n'
+        route_str = " ".join(e.getID() for e in route)
         
-        # 3-5 vehicles per coverage route
-        for i in range(random.randint(3, 5)):
-            t = random.randint(0, 3550)
-            vtype = random.choices(vtypes, weights=vtype_weights, k=1)[0]
-            routes_xml += (f'    <vehicle id="cov_{vid_counter}" route="{route_id}" '
-                          f'type="{vtype}" depart="{t}" departLane="best" '
-                          f'departPos="random" departSpeed="max"/>\n')
-            vid_counter += 1
+        for t in range(5, MAX_TIME, 60):
+            rid = f"cls_r{vid}"
+            xml += f'    <route id="{rid}" edges="{route_str}"/>\n'
+            
+            # Slow vehicle in lane 0
+            xml += (f'    <vehicle id="cls_{vid}" route="{rid}" type="truck" '
+                   f'depart="{t}" departLane="0" departPos="100" departSpeed="10"/>\n')
+            vid += 1
+            
+            # Fast vehicle in lane 1 (will catch up and enter blind spot)
+            xml += (f'    <vehicle id="cls_{vid}" route="{rid}" type="sedan" '
+                   f'depart="{t + 3}" departLane="1" departPos="0" departSpeed="20" maxSpeed="33.33"/>\n')
+            vid += 1
     
-    # Phase 3: Platoon bursts (Restored to 30)
-    routes_xml += '\n    <!-- Phase 3: Platoon bursts -->\n'
-    for burst_idx in range(30):
+    # ================================================================
+    # PHASE 3: Coverage traffic — all roads get vehicles
+    # ================================================================
+    xml += '\n    <!-- PHASE 3: Network coverage -->\n'
+    for edge in all_edges:
+        route = find_route(edge, min_len=2, max_len=4)
+        if len(route) < 2:
+            continue
+        
+        route_str = " ".join(e.getID() for e in route)
+        rid = f"cov_r{vid}"
+        xml += f'    <route id="{rid}" edges="{route_str}"/>\n'
+        
+        # 1 vehicle at t=0, 1 more later
+        vt = random.choices(vtypes, weights=vweights, k=1)[0]
+        xml += (f'    <vehicle id="cov_{vid}" route="{rid}" type="{vt}" '
+               f'depart="0" departLane="best" departPos="base" departSpeed="15"/>\n')
+        vid += 1
+        
+        t = random.randint(30, MAX_TIME)
+        vt = random.choices(vtypes, weights=vweights, k=1)[0]
+        xml += (f'    <vehicle id="cov_{vid}" route="{rid}" type="{vt}" '
+               f'depart="{t}" departLane="best" departPos="base" departSpeed="15"/>\n')
+        vid += 1
+    
+    # ================================================================
+    # PHASE 4: Platoon bursts on bridges
+    # ================================================================
+    xml += '\n    <!-- PHASE 4: Platoon bursts -->\n'
+    for i in range(20):
         if not multi_lane_edges: break
         ml_edge = random.choice(multi_lane_edges)
-        route = find_route_from_edge(ml_edge, min_length=3, max_length=7)
+        route = find_route(ml_edge, min_len=3, max_len=6)
         if len(route) < 3: continue
         
-        route_edges = " ".join(e.getID() for e in route)
-        route_id = f"plt_route_{vid_counter}"
-        routes_xml += f'    <route id="{route_id}" edges="{route_edges}"/>\n'
-        t_base = 60 + burst_idx * 100
+        route_str = " ".join(e.getID() for e in route)
+        rid = f"plt_r{vid}"
+        xml += f'    <route id="{rid}" edges="{route_str}"/>\n'
         
-        for car_idx in range(6): # 6 cars per platoon
-            vtype = random.choices(vtypes, weights=vtype_weights, k=1)[0]
-            t = t_base + car_idx * 2
-            routes_xml += (f'    <vehicle id="plt_{vid_counter}" route="{route_id}" '
-                          f'type="{vtype}" depart="{t}" departLane="best" '
-                          f'departPos="random" departSpeed="max"/>\n')
-            vid_counter += 1
+        t_base = 10 + i * 15
+        if t_base > MAX_TIME: break
+        
+        for j in range(4):
+            lane = j % 2  # Alternate between lanes 0 and 1
+            vt = random.choices(vtypes, weights=vweights, k=1)[0]
+            t = t_base + j * 1.5
+            if t > MAX_TIME: break
+            xml += (f'    <vehicle id="plt_{vid}" route="{rid}" type="{vt}" '
+                   f'depart="{t:.1f}" departLane="{lane}" departPos="base" departSpeed="15"/>\n')
+            vid += 1
     
-    # Phase 4: Emergency scenarios (Restored to 20)
-    routes_xml += '\n    <!-- Phase 4: Emergency scenarios -->\n'
-    for scenario_idx in range(20):
-        if not long_edges: break
-        edge = random.choice(long_edges)
-        route = find_route_from_edge(edge, min_length=2, max_length=4)
-        if len(route) < 2: continue
-        
-        route_edges = " ".join(e.getID() for e in route)
-        route_id = f"emg_route_{vid_counter}"
-        routes_xml += f'    <route id="{route_id}" edges="{route_edges}"/>\n'
-        t = 120 + scenario_idx * 150
-        
-        routes_xml += (f'    <vehicle id="emg_{vid_counter}" route="{route_id}" '
-                      f'type="sedan_v2v" depart="{t}" departLane="best" '
-                      f'departPos="0" departSpeed="max"/>\n')
-        vid_counter += 1
-        
-        routes_xml += (f'    <vehicle id="emg_{vid_counter}" route="{route_id}" '
-                      f'type="truck_v2v" depart="{t+2}" departLane="best" '
-                      f'departPos="100" departSpeed="10"/>\n')
-        vid_counter += 1
-    
-    routes_xml += '\n</routes>\n'
+    xml += '\n</routes>\n'
     
     out_path = "../Maps/atal_bridge_scenarios.rou.xml"
     with open(out_path, 'w') as f:
-        f.write(routes_xml)
+        f.write(xml)
     
-    print(f"\n✅ Restored: Generated {vid_counter} vehicles (High Volume Scenarios)")
+    print(f"\n✅ Generated {vid} vehicles")
+    print(f"   Blind spot pairs: ~{len(multi_lane_edges) * (MAX_TIME // 10) * 2}")
+    print(f"   Closing scenarios: ~{min(15,len(multi_lane_edges)) * (MAX_TIME // 20) * 2}")
+    print(f"   Coverage: ~{len(all_edges) * 2}")
+    print(f"   All departures within 0-{MAX_TIME}s")
     print(f"   Output: {out_path}")
     return out_path
 
