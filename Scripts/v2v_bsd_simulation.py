@@ -118,6 +118,7 @@ from pathlib import Path
 
 from bsd_engine import BSDEngine, VehicleState, Params, AlertLevel  # type: ignore
 from train_ai_model import BSDPredictor  # type: ignore
+import scenario_injector  # type: ignore
 
 
 # ============================================================
@@ -164,19 +165,26 @@ class GilbertElliottChannel:
 
 class BaselineBSD:
     """
-    Euro NCAP Surrogate Safety Baseline (TTC Thresholding).
-    Triggers CRITICAL if longitudinal TTC < 1.5s, WARNING if TTC < 2.5s.
+    Euro NCAP Surrogate Safety Baseline (TTC Thresholding) and static box comparison.
     """
     TTC_WARNING = 2.5
     TTC_CRITICAL = 1.5
     
     def check(self, ego: VehicleState, targets: dict[str, VehicleState], engine) -> dict:
         alert_left = alert_right = "SAFE"
+        static_left = static_right = "SAFE"
         for vid, target in targets.items():
             x_rel, y_rel = engine._to_ego_frame(ego, target.x, target.y)
             # Only consider targets in adjacent lanes and behind/next to ego
             if 0.9 <= abs(x_rel) <= 4.4 and -15.0 <= y_rel <= ego.length / 2.0:
                 side = "RIGHT" if x_rel > 0 else "LEFT"
+                
+                # Static Box Baseline (3.5m x 8.0m zone)
+                half_w = ego.width / 2.0
+                if half_w <= abs(x_rel) <= half_w + 3.5 and -8.0 <= y_rel <= ego.length / 2.0:
+                    if side == "LEFT": static_left = "WARNING"
+                    else: static_right = "WARNING"
+                    
                 heading_diff = target.heading - ego.heading
                 v_rel = ego.speed - target.speed * np.cos(heading_diff)
                 d_gap = abs(y_rel) - (ego.length + target.length) / 2.0
@@ -195,7 +203,7 @@ class BaselineBSD:
                     if side == "LEFT" and alert_left != "CRITICAL": alert_left = "WARNING"
                     if side == "RIGHT" and alert_right != "CRITICAL": alert_right = "WARNING"
                     
-        return {'alert_left': alert_left, 'alert_right': alert_right}
+        return {'alert_left': alert_left, 'alert_right': alert_right, 'static_left': static_left, 'static_right': static_right}
 
 DEFAULT_LENGTH = 4.5
 DEFAULT_WIDTH  = 1.8
@@ -363,6 +371,7 @@ def main():
         'step': 0, 'vehicles': {}, 'has_ai': has_ai,
         'active_count': 0,
         'alert_counts': {'safe': 0, 'caution': 0, 'warning': 0, 'critical': 0},
+        'comm_links': [], # List of (ego_vid, target_vid) for visualization
         'params': {
             'L_base': Params.L_BASE, 'lambda': Params.LAMBDA_SCALE,
             'W_lane': Params.W_LANE, 'sigma_gps': Params.SIGMA_GPS,
@@ -422,6 +431,13 @@ def main():
             continue
 
         # 3. Evict stale data
+        arrived = traci.simulation.getArrivedIDList()
+        for vid in arrived:
+            GNSS_STATE.pop(vid, None)
+            V_STATE_CACHE.pop(vid, None)
+            if 'ego_ids' in locals() and isinstance(ego_ids, set):
+                ego_ids.discard(vid)
+
         active_set = set(vids)
         for stale_vid in list(V_STATE_CACHE.keys()):
             if stale_vid not in active_set:
@@ -477,8 +493,12 @@ def main():
                 ego_ids.append(vid)
 
         # -------------------------------------------------------------
-        # DEMONSTRATION SCENARIO INJECTION (Removed)
+        # DEMONSTRATION SCENARIO INJECTION
         # -------------------------------------------------------------
+        # Inject tactical scenarios (Side-by-side, Overtaking, Cutting)
+        scenario_injector.inject_blind_spot_scenario(step, net, traci)
+        # Force interactions between vehicles to maintain dangerous behaviors
+        scenario_injector.force_vehicle_interactions(step, net, traci)
 
         # ── Per-vehicle BSD processing ──
         step_vehs: Dict[str, Any] = {}
@@ -585,6 +605,11 @@ def main():
                 step_caution += 1
                 cum_caution += 1
 
+            # Track successful communication for V2V visualization
+            if received:
+                for target_vid in received:
+                    live['comm_links'].append({'ego': ego_vid, 'target': target_vid})
+
             # AI prediction — accumulate features for batch inference
             target_details = result.get('target_details', [])
             max_gap  = min([t.get('d_gap', 100.0) for t in target_details]) if target_details else 100.0
@@ -592,15 +617,15 @@ def main():
 
             k_lost_max = 0
             rel_speed  = 0.0
-            target_heading_diff = 0.0
             target_angle = 0.0
             if target_details:
                 top_tv = target_details[0]['target_vid']
                 if ego_vid in engines and top_tv in engines[ego_vid].target_trackers:
                     k_lost_max = engines[ego_vid].target_trackers[top_tv].k_lost
                 if top_tv in states:
-                    rel_speed = ego.speed - states[top_tv].speed
-                    target_heading_diff = states[top_tv].heading - ego.heading
+                    v_tgt_proj = states[top_tv].speed * np.cos(states[top_tv].heading - ego.heading)
+                    y_rel_top = target_details[0].get('y_rel', -1)
+                    rel_speed = ego.speed - v_tgt_proj if y_rel_top >= 0 else v_tgt_proj - ego.speed
                     target_angle = np.arctan2(states[top_tv].y - ego.y, states[top_tv].x - ego.x) - ego.heading
 
             # Collect for batch prediction
@@ -618,11 +643,10 @@ def main():
                 'has_targets': 1 if result['num_targets'] > 0 else 0,
                 'speed_category': 0 if ego.speed < 5 else (1 if ego.speed < 20 else 2),
                 'closing_speed': rel_speed,
-                'target_heading_diff': target_heading_diff,
                 'target_angle': target_angle,
             })
             # Store intermediate per-vehicle data for metrics assembly
-            interim_results.append((ego_vid, result, ego, target_details, max_gap, rel_speed, max_plr, k_lost_max, al, ar, base_result, target_heading_diff, target_angle))
+            interim_results.append((ego_vid, result, ego, target_details, max_gap, rel_speed, max_plr, k_lost_max, al, ar, base_result, target_angle))
 
 
         # ── Batch AI prediction (one XGBoost call for all vehicles) ──
@@ -634,7 +658,7 @@ def main():
 
         # ── Assemble metrics and live data from interim results ──
         log_this_step = (step % (BSD_INTERVAL * 2) == 0)
-        for (ego_vid, result, ego, target_details, max_gap, rel_speed, max_plr, k_lost_max, al, ar, base_result, target_heading_diff, target_angle) in interim_results:
+        for (ego_vid, result, ego, target_details, max_gap, rel_speed, max_plr, k_lost_max, al, ar, base_result, target_angle) in interim_results:
             ai_result = ai_results_map.get(ego_vid, {'ai_alert': 'N/A', 'ai_confidence': 0.0, 'ai_critical_prob': 0.0})
 
             sorted_details = sorted(target_details, key=lambda x: x['cri'], reverse=True)
@@ -650,7 +674,6 @@ def main():
                     'yaw_rate': ego.yaw_rate,
                     'max_gap': max_gap, 'rel_speed': rel_speed,
                     'max_plr': max_plr, 'k_lost_max': k_lost_max,
-                    'target_heading_diff': target_heading_diff,
                     'target_angle': target_angle,
                     'cri_left': result['cri_left'], 'cri_right': result['cri_right'],
                     'P_left':        target_left['P']              if target_left  else 0.0,
@@ -666,6 +689,8 @@ def main():
                     'alert_left': al, 'alert_right': ar,
                     'baseline_left':  base_result['alert_left'],
                     'baseline_right': base_result['alert_right'],
+                    'static_left':    base_result['static_left'],
+                    'static_right':   base_result['static_right'],
                     'ground_truth_collision': 1 if ego_vid in collision_vids else 0,
                     'num_targets': result['num_targets'],
                     'signals': ego.signals,
@@ -684,8 +709,8 @@ def main():
                     'top_cri': max(result['cri_left'], result['cri_right']),
                 })
 
-            # Live data for dashboard (top 30)
-            if len(step_vehs) < 30:
+            # Live data for dashboard (top 200 for 'WOW' factor)
+            if len(step_vehs) < 200:
                 tops = sorted(result['target_details'], key=lambda t: t['cri'], reverse=True)[:3]
                 step_vehs[ego_vid] = {
                     'x': float(ego.x), 'y': float(ego.y),
@@ -709,20 +734,26 @@ def main():
         live['step'] = step
         live['vehicles'] = step_vehs
         live['active_count'] = n_active
+        # Keep only the most recent links
+        live['comm_links'] = live['comm_links'][-200:] if len(live['comm_links']) > 200 else live['comm_links']
         live['alert_counts'] = {
             'safe': cum_safe, 'caution': cum_caution,
             'warning': cum_warning, 'critical': cum_critical
         }
         live['total_alerts_logged'] = len(alerts_log)
         live['elapsed'] = float(round(float(time.time() - t0), 1))
-
-        # Write live JSON every 100 steps (reduce disk I/O overhead)
-        if step % 100 == 0:
+        
+        live['params'] = {'ALPHA': Params.ALPHA, 'BETA': Params.BETA, 'GAMMA': Params.GAMMA, 'THETA_3': Params.THETA_3}
+        
+        # Write live JSON every 25 steps (2.5s real-world intervals)
+        if step % 25 == 0:
             try:
-                with open(LIVE_FILE, 'w') as f:
+                _tmp = LIVE_FILE + '.tmp'
+                with open(_tmp, 'w') as f:
                     json.dump(live, f)
-            except:
-                pass
+                os.replace(_tmp, LIVE_FILE)
+            except Exception as e:
+                pass   # Non-critical: dashboard will use last good state
 
         # Save CSVs every 500 steps
         if step % 500 == 0 and step > 0:

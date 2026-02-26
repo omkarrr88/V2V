@@ -1,17 +1,9 @@
 import pandas as pd
 import numpy as np
 from sklearn.metrics import f1_score
+from bsd_engine import Params
 
-def compute_cri(row, alpha, beta, gamma):
-    # Left
-    r_w_left = alpha * row['R_decel_left'] + beta * row['R_ttc_left'] + gamma * row['R_intent_left']
-    cri_left = row['P_left'] * r_w_left * row['plr_mult_left']
-    
-    # Right
-    r_w_right = alpha * row['R_decel_right'] + beta * row['R_ttc_right'] + gamma * row['R_intent_right']
-    cri_right = row['P_right'] * r_w_right * row['plr_mult_right']
-    
-    return max(cri_left, cri_right)
+# Removed unused compute_cri hook
 
 def main():
     print("Loading bsd_metrics.csv...")
@@ -20,23 +12,9 @@ def main():
     except Exception as e:
         df = pd.read_csv('bsd_metrics.csv')
         
-    y_true = df['ground_truth_collision'].values
-    y_true = df['ground_truth_collision'].values
-
-    if y_true.sum() == 0:
-        print("No SUMO collisions found. Building composite near-miss proxy...")
-        # Composite proxy captures BOTH longitudinal AND lateral risk events:
-        #   - Longitudinal rear-end near-miss: small gap closing fast
-        #   - Lateral sideswipe near-miss: high R_ttc_lat risk on either side
-        # Using R_ttc columns (model internals, not raw features) ensures
-        # the proxy captures lateral scenarios that gap alone misses.
-        longitudinal_nm = (df['max_gap'] < 2.0)
-        lateral_nm_left  = (df.get('R_ttc_left',  pd.Series(0.0, index=df.index)) > 0.7) & \
-                           (df.get('P_left',       pd.Series(0.0, index=df.index)) > 0.3)
-        lateral_nm_right = (df.get('R_ttc_right', pd.Series(0.0, index=df.index)) > 0.7) & \
-                           (df.get('P_right',      pd.Series(0.0, index=df.index)) > 0.3)
-        y_true = (longitudinal_nm | lateral_nm_left | lateral_nm_right).astype(int)
-        print(f"   Composite near-miss events: {y_true.sum()} / {len(y_true)} rows ({100*y_true.mean():.2f}%)")
+    from bsd_utils import compute_ground_truth, check_coverage
+    y_true = compute_ground_truth(df)
+    check_coverage(y_true, 'optimize_weights.py')
 
     if y_true.sum() == 0:
         print("No near-miss events found. Run a longer simulation (--steps 3600) first.")
@@ -56,7 +34,7 @@ def main():
             cri_L = df['P_left']  * (alpha*df['R_decel_left']  + beta*df['R_ttc_left']  + gamma*df['R_intent_left'])  * df['plr_mult_left']
             cri_R = df['P_right'] * (alpha*df['R_decel_right'] + beta*df['R_ttc_right'] + gamma*df['R_intent_right']) * df['plr_mult_right']
             cri_vals = pd.concat([cri_L.clip(0,1), cri_R.clip(0,1)], axis=1).max(axis=1)
-            y_pred = (cri_vals >= 0.50).astype(int)
+            y_pred = (cri_vals >= Params.THETA_3).astype(int)
             
             f1 = f1_score(y_true, y_pred, zero_division=0)
             if f1 > best_f1:

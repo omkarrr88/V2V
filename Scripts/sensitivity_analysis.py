@@ -1,6 +1,7 @@
 import subprocess
 import pandas as pd
 from sklearn.metrics import f1_score
+from bsd_engine import Params
 
 def run_sim(param, val):
     cmd = ['python', 'v2v_bsd_simulation.py', '--no-gui', '--steps', '600']
@@ -21,8 +22,12 @@ def run_sim(param, val):
     except Exception:
         df = pd.read_csv('bsd_metrics.csv')
         
-    y_true = df['ground_truth_collision'].values
-    y_pred = (df[['cri_left', 'cri_right']].max(axis=1) >= 0.8).astype(int)
+    from bsd_utils import compute_ground_truth, check_coverage
+    y_true = compute_ground_truth(df)
+    check_coverage(y_true, 'sensitivity_analysis.py')
+
+    eval_threshold = val if param == 'THETA_3' else Params.THETA_3
+    y_pred = (df[['cri_left', 'cri_right']].max(axis=1) >= eval_threshold).astype(int)
     return f1_score(y_true, y_pred, zero_division=0)
 
 def main():

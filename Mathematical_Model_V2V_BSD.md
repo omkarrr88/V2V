@@ -67,21 +67,7 @@ If the GPS antenna is not located at the true center of the vehicle (e.g., mount
 $$ X_{true} = X_{gps} - L_{offset} \cdot \cos(\theta) $$
 $$ Y_{true} = Y_{gps} - L_{offset} \cdot \sin(\theta) $$
 
-**Angle Convention:** All heading angles $\theta$ in this model are measured **counterclockwise from the positive X-axis** (standard mathematical convention).
 
-**GPS Antenna Lever-Arm Correction:**
-If the GPS antenna is not located at the true center of the vehicle (e.g., mounted on the rear roof), the reported coordinate $(X_{gps}, Y_{gps})$ must be corrected to the true vehicle centroid $(X_{true}, Y_{true})$:
-$$ X_{true} = X_{gps} - L_{offset} \cdot \cos(\theta) $$
-$$ Y_{true} = Y_{gps} - L_{offset} \cdot \sin(\theta) $$
-
-**Angle Convention:** All heading angles $\theta$ in this model are measured **counterclockwise from the positive X-axis** (standard mathematical convention).
-
-**GPS Antenna Lever-Arm Correction:**
-If the GPS antenna is not located at the true center of the vehicle (e.g., mounted on the rear roof), the reported coordinate $(X_{gps}, Y_{gps})$ must be corrected to the true vehicle centroid $(X_{true}, Y_{true})$:
-$$ X_{true} = X_{gps} - L_{offset} \cdot \cos(\theta) $$
-$$ Y_{true} = Y_{gps} - L_{offset} \cdot \sin(\theta) $$
-
-**Angle Convention:** All heading angles $\theta$ in this model are measured **counterclockwise from the positive X-axis** (standard mathematical convention).
 
 **Transformation:**
 
@@ -218,6 +204,11 @@ Where:
 *   The naming $x_{outer}$/$x_{inner}$ refers to the **upper** and **lower** integration limits respectively (not geometric left/right). The $\text{sgn}(\hat{x}_{rel})$ automatically selects the correct sign for the target's side.
 
 This approximation is mathematically equivalent to the theoretical integral for rectangular zones with diagonal covariance and executes in microseconds.
+
+> **Forward/Rear Center-Lane Guard:** 
+> V2V based BSD can occasionally trigger "phantom" side alerts for vehicles directly in front or behind the Ego due to lateral GPS jitter. To prevent this, a quadratic guard is applied to targets with small lateral offsets:
+> If $|x_{hat}| < W_e/2$, then $P_{lat}$ is attenuated by $(\frac{|x_{hat}|}{W_e/2})^2$.
+> This ensures that vehicles strictly in-line with the Ego vehicle have $P \to 0$ even if GPS noise pushes them momentarily over the $W_e/2$ boundary.
 
 > **Side-Specificity Note:** The $\text{sgn}(\hat{x}_{rel})$ term in $x_{outer}$ and $x_{inner}$ automatically selects the correct lateral bounds for the side where the target is located. When $\hat{x}_{rel} > 0$ (target on right), the bounds become $[W_e/2,\; W_e/2 + W_{lane}]$. When $\hat{x}_{rel} < 0$ (target on left), the bounds become $[-(W_e/2 + W_{lane}),\; -W_e/2]$. Therefore, $P(V_t \in Z_{bs})$ is inherently side-specific and produces the correct probability for the side on which the target lies — no additional separation into $P_{left}$ and $P_{right}$ is required.
 
@@ -373,35 +364,24 @@ $$ R_{ttc} = \begin{cases} 1.0 & \text{if } 0 < TTC_{accel} \leq TTC_{critical} 
 
 ### 5.2.1 Lateral Time-To-Collision ($TTC_{lat}$)
 
-Blind spot collisions are primarily lateral side-swipes. The purely longitudinal TTC must be combined with a lateral closure analysis:
+Blind spot collisions are primarily lateral side-swipes. The purely longitudinal TTC must be combined with a lateral closure analysis to detect side-swipe threats from swerving targets:
 
 $$ TTC_{lat} = \frac{W_{gap}}{|v_{lat, rel}|} $$
 
 Where:
 *   $W_{gap} = W_{lane} - \frac{W_e}{2} - \frac{W_t}{2}$ (available lateral space)
-*   $v_{lat, rel} = v_e \cdot \sin(\theta_e - \theta_t)$ (relative lateral velocity)
+*   $v_{lat, rel} = v_t \cdot \sin(\theta_t - \theta_e)$ (target lateral velocity relative to ego)
 *   If $|v_{lat, rel}| < \varepsilon_v$, $TTC_{lat} = TTC_{max}$ (parallel track)
 
 The unified TTC risk considers both axes:
-$$ R_{ttc, 2D} = \max(R_{ttc, long}, R_{ttc, lat}) $$
+$$ R_{ttc} = \max(R_{ttc, long}, R_{ttc, lat}) $$
+
+Where the lateral risk mapping is linear:
+$$ R_{ttc, lat} = \begin{cases} 1.0 - \frac{TTC_{lat}}{TTC_{critical}} & \text{if } TTC_{lat} \leq TTC_{critical} \\ 0 & \text{otherwise} \end{cases} $$
 
 **Behavior:**
 
-### 5.2.1 Lateral Time-To-Collision ($TTC_{lat}$)
 
-Blind spot collisions are primarily lateral side-swipes. The purely longitudinal TTC must be combined with a lateral closure analysis:
-
-$$ TTC_{lat} = \frac{W_{gap}}{|v_{lat, rel}|} $$
-
-Where:
-*   $W_{gap} = W_{lane} - \frac{W_e}{2} - \frac{W_t}{2}$ (available lateral space)
-*   $v_{lat, rel} = v_e \cdot \sin(\theta_e - \theta_t)$ (relative lateral velocity)
-*   If $|v_{lat, rel}| < \varepsilon_v$, $TTC_{lat} = TTC_{max}$ (parallel track)
-
-The unified TTC risk considers both axes:
-$$ R_{ttc, 2D} = \max(R_{ttc, long}, R_{ttc, lat}) $$
-
-**Behavior:**
 
 | $TTC_{accel}$ | $R_{ttc}$ | Interpretation |
 |---------------|-----------|----------------|
@@ -460,7 +440,7 @@ $$ CRI_{final}(V_t) = P(V_t \in Z_{bs}) \times \left( \alpha \cdot R_{decel} + \
 
 | Parameter | V2.4 Default | V3.0 Optimized | Optimization Method |
 |-----------|-------------|----------------|---------------------|
-| $\alpha$ ($R_{decel}$) | 0.35 | 0.15 | Grid search, F1=0.0004 |
+| $\alpha$ ($R_{decel}$) | 0.35 | 0.15 | Grid search (run optimize_weights.py to update) |
 | $\beta$ ($R_{ttc}$)   | 0.45 | 0.80 | Grid search, lateral-aware near-miss proxy |
 | $\gamma$ ($R_{intent}$) | 0.20 | 0.05 | Grid search |
 | $\epsilon$ | 0.30 | 0.30 | PLR penalty |
@@ -576,7 +556,7 @@ This model is a **pure V2V-based** blind spot detection system. It relies exclus
 6.  **Ego-only curvature correction:** The clothoid correction in Section 3.2 compensates only for the Ego vehicle's own trajectory curvature. The Target vehicle's independent curvature is not modeled. This approximation is valid when both vehicles follow the same road curve, but accuracy degrades in diverging-trajectory scenarios (e.g., roundabouts, exit ramps).
 7.  **Aerodynamic drag approximation:** The drag term in $a_{max,t}$ uses vehicle-class-typical values for $C_d$ and $A_f$. Per-vehicle aerodynamic data is not available via BSM. At typical urban/highway speeds ($\leq 120$ km/h), the drag contribution to deceleration is $< 5\%$ of total braking force, making this approximation acceptable.
 8.  **Intent detection is Ego-only:** $R_{intent}$ captures only the **Ego vehicle's** lane-change intent (turn signal, lateral drift). A target vehicle drifting into the Ego's lane would not be captured by $R_{intent}$. However, this scenario IS captured by $R_{ttc}$ (closing distance) and $R_{decel}$ (stopping distance), so the overall CRI still responds to target-side lateral intrusions — just via the physics components rather than the intent component.
-9.  **[V3.0 RESOLVED]** Lateral sideswipe risk is now captured by §5.2.1 (Lateral TTC). The combined $R_{ttc}$ = max($R_{ttc,lon}$, $R_{ttc,lat}$) accounts for both longitudinal closure and lateral convergence of adjacent-lane vehicles. Remaining open limitation: W_gap assumes constant 1-lane separation; in multi-lane merges this may underestimate lateral gap.
+9.  **[V3.0 RESOLVED]** Lateral sideswipe risk is now captured by the Lateral TTC section. The combined $R_{ttc}$ = max($R_{ttc,lon}$, $R_{ttc,lat}$) accounts for both longitudinal closure and lateral convergence of adjacent-lane vehicles. Remaining open limitation: W_gap assumes constant 1-lane separation; in multi-lane merges this may underestimate lateral gap.
 
 > **Implementation Note (Dual Counter Requirement):** Each target vehicle requires two separate counters maintained per-side: (1) $k_{lost}$ — consecutive dropped packets for dead reckoning $\tau_{eff}$ computation, and (2) a sliding window buffer of $N_{plr} = 10$ reception flags for PLR computation. These track different aspects of communication quality and must not be conflated.
 
@@ -585,7 +565,75 @@ This model is a **pure V2V-based** blind spot detection system. It relies exclus
 
 ## 10. Experimental Validation
 
-The V3.0 model explicitly incorporates:
-1. **Ablation Studies:** Proving independent contributions of decoupled $R_{decel}$, $R_{ttc}$, and $R_{intent}$.
-2. **Sensitivity Analysis:** Validating robustness across GNSS error ($\sigma_{gps}$), PLR channel transitions, and system thresholds.
-3. **ROC Curves:** Comparative benchmarking of theoretical boundaries against a data-driven XGBoost validation baseline directly measuring True Positives vs False Positives over diverse topological simulations.
+The V3.0 model is validated through four complementary experimental methodologies, each 
+implemented in the accompanying Python scripts and designed to run on SUMO simulation data.
+
+### 10.1 AI Label Generation (Ground Truth for ML Validation)
+
+The XGBoost hybrid predictor is trained on labels generated by a **kinematic near-miss proxy** 
+that is deliberately independent of the physics model's intermediate outputs ($R_{ttc}$, $R_{decel}$):
+
+$$
+y_{true} = \begin{cases}
+  1 & \text{if } \texttt{ground\_truth\_collision} = 1 \text{ (SUMO bounding-box collision)}\\
+  1 & \text{if } gap < 2.0\text{m} \text{ OR } TTC_proxy < 1.5 s \text{ (near-miss)}\\
+  0 & \text{otherwise}
+\end{cases}
+$$
+
+where $TTC\_proxy = gap / \max(v_{rel}, 0.001)$ is computed solely from raw BSM fields. 
+*(Note: As of V3.0, this ground truth logic is centralized in `bsd_utils.py` to guarantee identical evaluation across all testing scripts).*
+
+**Label mapping for multi-class training:**
+
+| Label | Class | Condition |
+|-------|-------|-----------|
+| 3 | CRITICAL | $gap < 2.0$ m OR $TTC_proxy < 1.5$ s |
+| 2 | WARNING  | $gap < 5.0$ m OR $TTC_proxy < 3.0$ s |
+| 1 | CAUTION  | $gap < 8.0$ m AND $TTC_proxy < 5.0$ s |
+| 0 | SAFE     | None of the above |
+
+### 10.2 ROC Curve Comparison (4 Systems)
+
+The ROC evaluation (`evaluate_system.py`) compares four systems on the same ground truth:
+
+| System | Description | Score |
+|--------|-------------|-------|
+| Mathematical Model (V3.0) | CRI = max(cri_left, cri_right) | Continuous [0,1] |
+| AI Hybrid Predictor | XGBoost critical probability | Continuous [0,1] |
+| TTC Kinematic Baseline | TTC-threshold alert (WARNING/CRITICAL) | Ordinal {0, 0.5, 1.0} |
+| Static Box Baseline | Fixed 3.5m×8.0m geometric zone | Ordinal {0, 0.5, 1.0} |
+
+The TTC Kinematic Baseline uses: CRITICAL if $TTC_{lon} < 1.5$ s, WARNING if $TTC_{lon} < 2.5$ s.
+The Static Box Baseline triggers WARNING if target is within $\pm 3.5$ m lateral and $-8.0$ to $+L_{ego}/2$ m longitudinal.
+
+### 10.3 Ablation Study (N=5 Seeds)
+
+The ablation study (`ablation_study.py`) evaluates 5 configurations across N=5 independent 
+SUMO random seeds (42–46), reporting mean ± std F1:
+
+| Config | α | β | γ | Lateral TTC | Purpose |
+|--------|---|---|---|-------------|---------|
+| A1 | 1.0 | 0.0 | 0.0 | OFF | Decel-only baseline |
+| A2 | 0.5 | 0.5 | 0.0 | OFF | Decel + TTC, no intent |
+| A3 | 0.35 | 0.45 | 0.20 | OFF | V2.0 weights, no lateral TTC |
+| A4 | 0.35 | 0.45 | 0.20 | ON | V2.0 weights + lateral TTC |
+| A5 | 0.15 | 0.80 | 0.05 | ON | V3.0 optimized weights (this model) |
+
+### 10.4 Sensitivity Analysis
+
+The sensitivity analysis (`sensitivity_analysis.py`) sweeps four parameters while holding all 
+others at their V3.0 defaults, measuring F1 score degradation:
+
+| Parameter | Sweep Range | V3.0 Default | Measures |
+|-----------|-------------|--------------|---------|
+| $\sigma_{GPS}$ | 0.5 – 3.0 m | 1.5 m | Robustness to GPS degradation |
+| $PLR_{g2b}$ | 0.01 – 0.20 | 0.05 | Robustness to V2V channel loss |
+| $TTC_{crit}$ | 2.0 – 8.0 s | 4.0 s | Sensitivity to TTC horizon |
+| $\theta_3$ | 0.70 – 0.85 | 0.80 | Sensitivity to CRITICAL threshold |
+
+### 10.5 Multi-Seed Statistical Validation
+
+`run_multi_seed.py` runs the full system across 5 independent seeds (10, 20, 30, 40, 50) and 
+reports mean ± std F1 and AUC for the mathematical model, providing confidence bounds on 
+the reported performance metrics for IEEE submission.

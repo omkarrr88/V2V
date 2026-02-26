@@ -3,6 +3,7 @@ import pandas as pd
 from sklearn.metrics import f1_score, precision_score, recall_score
 
 import numpy as np
+from bsd_engine import Params
 
 def run_sim(alpha, beta, gamma, use_lat_ttc, seed):
     cmd = [
@@ -27,18 +28,12 @@ def run_sim(alpha, beta, gamma, use_lat_ttc, seed):
     return df, y_pred
 
 def get_y_true_for_seed(seed):
-    # Run full model to get the fixed ground truth for this seed
-    df, _ = run_sim(0.35, 0.45, 0.20, True, seed)
-    y_true = df['ground_truth_collision'].values
-    if y_true.sum() == 0:
-        longitudinal_nm  = (df['max_gap'] < 2.0)
-        lateral_nm_left  = (df.get('R_ttc_left',  pd.Series(0.0, index=df.index)) > 0.7) & \
-                           (df.get('P_left',       pd.Series(0.0, index=df.index)) > 0.3)
-        lateral_nm_right = (df.get('R_ttc_right', pd.Series(0.0, index=df.index)) > 0.7) & \
-                           (df.get('P_right',      pd.Series(0.0, index=df.index)) > 0.3)
-        y_true = (longitudinal_nm | lateral_nm_left | lateral_nm_right).astype(int).values
-    
-    # Return as a set of (step, ego_vid) that are positive
+    """Get kinematic near-miss ground truth for this seed (matches evaluate_system.py)."""
+    df, _ = run_sim(Params.ALPHA, Params.BETA, Params.GAMMA, True, seed)
+    from bsd_utils import compute_ground_truth, check_coverage
+    y_true = compute_ground_truth(df)
+    check_coverage(y_true, 'ablation_study.py')
+
     positive_events = set()
     for i, row in df.iterrows():
         if y_true[i] == 1:
@@ -61,6 +56,7 @@ def main():
         ('A2', 0.5, 0.5, 0.0, False),
         ('A3', 0.35, 0.45, 0.20, False),
         ('A4', 0.35, 0.45, 0.20, True),
+        ('A5', Params.ALPHA, Params.BETA, Params.GAMMA, True)
     ]
 
     all_results = {name: [] for name, _, _, _, _ in configs}

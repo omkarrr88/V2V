@@ -109,11 +109,20 @@ diverge_heading = np.pi/2 - math.radians(10)
 t_lat = VehicleState('t_lat', 103.5, 100, 20, 0, diverge_heading, 0, 4.5, 1.8, 1500, 0.7, 0, 'sedan', 0)
 tracker_lat = TargetTracker(vid='t_lat', last_state=t_lat)
 r_lat = engine_lat._compute_cri_for_target(ego_lat, t_lat, tracker_lat)
-v_lat_rel_expected = t_lat.speed * np.sin(diverge_heading - np.pi/2)
+v_lat_rel_expected = abs(t_lat.speed * np.sin(diverge_heading - np.pi/2))
+from bsd_engine import Params as P
+W_gap = P.W_LANE - ego_lat.width / 2.0 - t_lat.width / 2.0
+ttc_lat_expected = W_gap / v_lat_rel_expected
+if ttc_lat_expected < P.TTC_CRIT:
+    expected_R_ttc_lat = 1.0 - ttc_lat_expected / P.TTC_CRIT
+else:
+    expected_R_ttc_lat = 0.0
 print(f"  v_lat_rel = {v_lat_rel_expected:.4f} m/s (heading diff = 10°)")
-print(f"  R_ttc (with lateral) = {r_lat['R_ttc']:.4f}")
-assert r_lat['R_ttc'] >= 0, "R_ttc must be non-negative"
-print("✅ Lateral TTC produces valid non-negative result!")
+print(f"  Expected R_ttc_lat ≈ {expected_R_ttc_lat:.4f}")
+print(f"  Actual  R_ttc (with lateral) = {r_lat['R_ttc']:.4f}")
+assert r_lat['R_ttc'] >= expected_R_ttc_lat * 0.8, \
+    f"R_ttc should be ~{expected_R_ttc_lat:.4f}, got {r_lat['R_ttc']:.4f}"
+print("✅ Lateral TTC produces physically correct non-trivial result!")
 
 print("\n=== TARGET INTENT TEST (V3.0 ego-only check) ===")
 engine_ti = BSDEngine()
@@ -161,5 +170,51 @@ print(f"  k_lost=6, all packets dropped: stale={res_plr['stale']}, cri={res_plr[
 assert res_plr['stale'], "k_lost=6 must be flagged as hard stale"
 assert res_plr['cri'] == 0.0, f"Stale target CRI must be 0.0, got {res_plr['cri']}"
 print("✅ PLR=1.0 edge case: stale flag correct, CRI correctly zeroed!")
+
+print("\n=== EMPTY TARGETS TEST ===")
+engine_e = BSDEngine()
+ego_e = VehicleState('ego_e', 100, 100, 25, 0, np.pi/2, 0, 4.5, 1.8, 1500, 0.7, 0, 'sedan', 0)
+res_e = engine_e.process_step(ego_e, {}, set())
+assert res_e['cri_left']  == 0.0, f"CRI_left must be 0 with no targets, got {res_e['cri_left']}"
+assert res_e['cri_right'] == 0.0, f"CRI_right must be 0 with no targets, got {res_e['cri_right']}"
+assert res_e['alert_left']  == 'SAFE'
+assert res_e['alert_right'] == 'SAFE'
+assert res_e['num_targets'] == 0
+print(f"  CRI_left={res_e['cri_left']}, CRI_right={res_e['cri_right']}, alerts=SAFE/SAFE")
+print("✅ Empty targets → CRI=0.0, SAFE verified!")
+
+print("\n=== FAST CLOSING TARGET = HIGH CRI ===")
+engine_fc = BSDEngine()
+ego_fc  = VehicleState('ego_fc',  100, 100, 20, 0, np.pi/2, 0, 4.5, 1.8, 1500, 0.7, 0, 'sedan', 0)
+t_fc    = VehicleState('t_fc',    103.5, 92, 50, 0, np.pi/2, 0, 4.5, 1.8, 1500, 0.7, 0, 'sedan', 0)
+tk_fc   = TargetTracker(vid='t_fc', last_state=t_fc)
+r_fc    = engine_fc._compute_cri_for_target(ego_fc, t_fc, tk_fc)
+print(f"  R_decel={r_fc['R_decel']:.4f}, R_ttc={r_fc['R_ttc']:.4f}, CRI={r_fc['cri']:.4f}")
+assert r_fc['R_ttc']   > 0.5, f"Fast closing: R_ttc should be > 0.5, got {r_fc['R_ttc']:.4f}"
+assert r_fc['cri']     > Params.THETA_2, f"Fast closing CRI {r_fc['cri']:.4f} should exceed WARNING={Params.THETA_2}"
+print("✅ Fast-closing vehicle correctly generates high-risk CRI > WARNING threshold!")
+
+print("\n=== bsd_utils.compute_ground_truth TEST ===")
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+from bsd_utils import compute_ground_truth
+import pandas as pd
+
+df_test = pd.DataFrame({
+    'max_gap':    [1.0,  3.0,  20.0, 50.0, 1.5],
+    'rel_speed':  [5.0,  5.0,   5.0,  0.5,  0.5],
+    'num_targets':[1,    1,     1,    1,    1  ],
+    'ground_truth_collision': [0, 0, 0, 0, 0],
+})
+# Row 0: gap=1.0<2.0  → 1
+# Row 1: ttc=0.6<1.5  → 1
+# Row 2: gap=20, ttc=4 → 0
+# Row 3: gap=50, ttc=100 → 0
+# Row 4: gap=1.5<2.0  → 1
+expected = [1, 1, 0, 0, 1]
+got = list(compute_ground_truth(df_test))
+assert got == expected, f"Expected {expected}, got {got}"
+print(f"  Results: {got} ✓")
+print("✅ bsd_utils.compute_ground_truth works correctly!")
 
 print("\n✅✅✅ ALL V3.0 TESTS PASSED — BSD Engine is complete and correct! ✅✅✅")

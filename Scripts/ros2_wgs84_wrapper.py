@@ -45,7 +45,7 @@ class BSDEngineROS2Wrapper:
     """
     def __init__(self, bsd_engine):
         self.engine = bsd_engine
-        self.wgs84 = WGS84Converter(lat0=37.7749, lon0=-122.4194) # Default origin
+        self.wgs84 = WGS84Converter(lat0=18.98, lon0=72.93) # Atal Setu Bridge origin
         
         try:
             rclpy.init()

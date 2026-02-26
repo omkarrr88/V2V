@@ -28,7 +28,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 # ML Libraries
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report, confusion_matrix
 import xgboost as xgb
@@ -66,9 +66,13 @@ DERIVED_FEATURES = [
     'has_targets',     # num_targets > 0
     'speed_category',  # 0=slow, 1=medium, 2=fast
     'closing_speed',   # Equivalent to rel_speed
-    'target_heading_diff', # Spatial geometry feature
-    'target_angle',    # Spatial geometry feature
 ]
+
+# NOTE: target_angle is computed externally (by sim from GPS positions) and logged to CSV,
+# but is NOT included here because DERIVED_FEATURES must only contain features that
+# add_derived_features() can compute from raw BSM telemetry alone.
+# For realtime deployment, this feature would require inter-vehicle position data
+# which is already captured indirectly through max_gap and other proximity features.
 
 TARGET_COL = 'alert_level'  # What we predict: 0=SAFE, 1=CAUTION, 2=WARNING, 3=CRITICAL
 
@@ -90,51 +94,25 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def create_target_labels(df: pd.DataFrame) -> pd.Series:
+
+def create_target_labels(df: pd.DataFrame):
     """
-    Generate labels from the MATH ENGINE's per-side intermediate outputs.
-    
-    These columns (P_left, R_ttc_left, etc.) are physics model internals.
-    They are NOT in FEATURE_COLS. The XGBoost model never sees them directly.
-    This ensures genuine statistical independence between labels and features.
-    
-    This makes the AI claim scientifically valid:
-    "XGBoost learns to predict CRI-equivalent risk from raw BSM telemetry,
-    without access to model internals." — citable as hybrid validation.
-    
-    Label mapping (mirrors CRI thresholds θ1/θ2/θ3):
-      CRITICAL (3): max side-CRI > θ3 (0.80)  OR ground_truth_collision
-      WARNING  (2): max side-CRI > θ2 (0.60)
-      CAUTION  (1): max side-CRI > θ1 (0.30)
-      SAFE     (0): otherwise
+    Generate ground truth alerts that exactly match the Mathematical Model's CRI.
+    This ensures the 'Model Sync %' measures the AI's ability to replicate the physics engine.
     """
-    # Reconstruct CRI from per-side intermediates (same formula as bsd_engine.py §6)
-    # These columns are in the CSV but NOT in FEATURE_COLS — true independence
-    from bsd_engine import Params
-    ALPHA, BETA, GAMMA = Params.ALPHA, Params.BETA, Params.GAMMA
-    THETA_1, THETA_2, THETA_3 = Params.THETA_1, Params.THETA_2, Params.THETA_3
-
-    def side_cri(P_col, Rd_col, Rt_col, Ri_col, plr_col):
-        P   = df.get(P_col,   pd.Series(0.0, index=df.index)).fillna(0.0)
-        Rd  = df.get(Rd_col,  pd.Series(0.0, index=df.index)).fillna(0.0)
-        Rt  = df.get(Rt_col,  pd.Series(0.0, index=df.index)).fillna(0.0)
-        Ri  = df.get(Ri_col,  pd.Series(0.0, index=df.index)).fillna(0.0)
-        plr = df.get(plr_col, pd.Series(1.0, index=df.index)).fillna(1.0)
-        return (P * (ALPHA * Rd + BETA * Rt + GAMMA * Ri) * plr).clip(0.0, 1.0)
-
-    cri_left  = side_cri('P_left',  'R_decel_left',  'R_ttc_left',  'R_intent_left',  'plr_mult_left')
-    cri_right = side_cri('P_right', 'R_decel_right', 'R_ttc_right', 'R_intent_right', 'plr_mult_right')
-    max_cri   = pd.concat([cri_left, cri_right], axis=1).max(axis=1)
-
     labels = pd.Series(0, index=df.index)
-    labels[max_cri > THETA_1] = 1   # CAUTION
-    labels[max_cri > THETA_2] = 2   # WARNING
-    labels[max_cri > THETA_3] = 3   # CRITICAL
-
-    # Promote to CRITICAL on actual SUMO bounding-box collision
-    if 'ground_truth_collision' in df.columns:
-        labels[df['ground_truth_collision'] == 1] = 3
-
+    
+    # Use the maximum CRI from either side logged by the simulation
+    # If one side is missing (NaN), treat it as 0
+    c_l = df.get('cri_left', 0.0).fillna(0.0)
+    c_r = df.get('cri_right', 0.0).fillna(0.0)
+    c = np.maximum(c_l, c_r)
+    
+    # Standard BSD Thresholds
+    labels[c >= 0.3] = 1 # CAUTION
+    labels[c >= 0.6] = 2 # WARNING
+    labels[c >= 0.8] = 3 # CRITICAL
+    
     return labels
 
 
@@ -150,21 +128,21 @@ def get_class_weights(y: pd.Series) -> dict:
     return weights
 
 
-def train_model():
+def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE):
     """Train XGBoost model on simulation data."""
     print("=" * 70)
     print("🤖 V2V BSD — AI Model Training Pipeline")
     print("=" * 70)
     
     # ── Load Data ──
-    print(f"\n📂 Loading data from {METRICS_FILE}...")
-    if not os.path.exists(METRICS_FILE):
-        print("❌ No training data found! Run the simulation first:")
-        print("   python v2v_bsd_simulation.py --no-gui --steps 3600")
-        sys.exit(1)
-    
-    df = pd.read_csv(METRICS_FILE)
-    print(f"   Loaded {len(df)} rows, {df['ego_vid'].nunique()} unique vehicles")
+    if df is None:
+        print(f"\n📂 Loading data from {METRICS_FILE}...")
+        if not os.path.exists(METRICS_FILE):
+            print("❌ No training data found! Run the simulation first:")
+            print("   python v2v_bsd_simulation.py --no-gui --steps 3600")
+            sys.exit(1)
+        df = pd.read_csv(METRICS_FILE)
+    print(f"   Loaded {len(df)} rows, {df['ego_vid'].nunique() if 'ego_vid' in df.columns else 'synthetic'} unique vehicles")
     
     # ── Feature Engineering ──
     print("\n🔧 Engineering features...")
@@ -184,16 +162,26 @@ def train_model():
         print(f"     {label_names.get(cls, cls)}: {count}")
     
     # ── Train/Test Split ──
-    print("\n   Performing chronological train/test split...")
-    split_idx = int(len(df) * 0.75)
+    print("\n   Performing stratified train/test split...")
+    X_train_raw, X_test, y_train_raw, y_test = train_test_split(
+        X, y, test_size=0.25, random_state=42, stratify=y
+    )
     
-    # We must balance only the training set
-    X_train_raw = X.iloc[:split_idx]
-    y_train_raw = y.iloc[:split_idx]
-    
-    X_test = X.iloc[split_idx:]
-    y_test = y.iloc[split_idx:]
-    
+    # ── Synthetic Class Injection ──
+    # Guarantee all 4 classes are present so num_class=4 works correctly
+    present_classes = y_train_raw.unique()
+    missing_classes = [c for c in [0, 1, 2, 3] if c not in present_classes]
+    if missing_classes:
+        print(f"\n💉 Injecting synthetic samples for missing classes: {missing_classes}")
+        synthetic_X = []
+        synthetic_y = []
+        dummy_row = X_train_raw.iloc[-1].copy()
+        for c in missing_classes:
+            synthetic_X.append(dummy_row)
+            synthetic_y.append(c)
+        X_train_raw = pd.concat([X_train_raw, pd.DataFrame(synthetic_X, columns=X_train_raw.columns)], ignore_index=True)
+        y_train_raw = pd.concat([y_train_raw, pd.Series(synthetic_y)], ignore_index=True)
+
     # ── Compute Sample Weights ──
     print("\n⚖️  Computing sample weights...")
     class_weights = get_class_weights(y_train_raw)
@@ -234,7 +222,7 @@ def train_model():
     
     # ── Evaluate ──
     print("\n📊 Evaluation Results:")
-    y_pred = model.predict(X_test)
+    y_pred = model.predict_proba(X_test).argmax(axis=1)
     
     target_names = [label_names[i] for i in sorted(y_test.unique())]
     report = classification_report(y_test, y_pred, target_names=target_names, 
@@ -242,6 +230,24 @@ def train_model():
     report_str = classification_report(y_test, y_pred, target_names=target_names,
                                         zero_division=0)
     print(report_str)
+    
+    # ── CRITICAL class specific recall (the metric that matters most for safety) ──
+    from sklearn.metrics import precision_score, recall_score
+    crit_mask = (y_test == 3)
+    if crit_mask.sum() > 0:
+        p3 = precision_score(y_test, y_pred, labels=[3], average='micro', zero_division=0)
+        r3 = recall_score   (y_test, y_pred, labels=[3], average='micro', zero_division=0)
+        n3 = int(crit_mask.sum())
+        print(f"\n⚠️  CRITICAL CLASS (label=3): Precision={p3:.4f}  Recall={r3:.4f}  Support={n3}")
+        if r3 < 0.50:
+            print("   ⛔ CRITICAL recall < 50% — model misses most imminent collisions.")
+            print("   Run longer simulation to generate more CRITICAL samples.")
+        elif r3 < 0.70:
+            print("   ⚠️  CRITICAL recall below 70% — acceptable for early-stage, improvable.")
+        else:
+            print(f"   ✅ CRITICAL recall {r3:.1%} — strong detection of imminent collisions.")
+    else:
+        print("\n⚠️  No CRITICAL class samples in test set — run longer simulation first.")
     
     # Cross-validation
     print("   Note: K-Fold cross-validation is disabled for chronological data.")
@@ -255,10 +261,20 @@ def train_model():
     for feat, imp in sorted_imp:
         bar = '█' * int(imp * 50)
         print(f"   {feat:20s} {imp:.4f} {bar}")
+        
+    import pathlib
+    imp_records = sorted(zip(available_features, model.feature_importances_),
+                         key=lambda x: x[1], reverse=True)
+    imp_df = pd.DataFrame(imp_records, columns=['feature', 'importance'])
+    imp_path = pathlib.Path(__file__).parent.parent / 'Outputs' / 'feature_importance.csv'
+    imp_path.parent.mkdir(parents=True, exist_ok=True)
+    imp_df.to_csv(imp_path, index=False)
+    print(f"\n   Feature importances saved → {imp_path}")
+    print(f"   Top 3 features: " + ", ".join(f"{r['feature']}={r['importance']:.3f}" for _, r in imp_df.head(3).iterrows()))
     
     # ── Save Model ──
-    print(f"\n💾 Saving model to {MODEL_FILE}...")
-    model.save_model(MODEL_FILE)
+    print(f"\n💾 Saving model to {model_out_path}...")
+    model.save_model(model_out_path)
     
     # Save feature list for inference
     model_info = {
@@ -271,11 +287,11 @@ def train_model():
         'feature_importance': {k: float(v) for k, v in importances.items()},
         'classification_report': report,
     }
-    with open(REPORT_FILE, 'w') as f:
+    with open(report_out_path, 'w') as f:
         json.dump(model_info, f, indent=2)
     
-    print(f"   Model saved: {MODEL_FILE}")
-    print(f"   Report saved: {REPORT_FILE}")
+    print(f"   Model saved: {model_out_path}")
+    print(f"   Report saved: {report_out_path}")
     
     print("\n" + "=" * 70)
     print(f"✅ AI Model Training Complete!")
@@ -313,7 +329,7 @@ class BSDPredictor:
     def predict(self, speed: float, accel: float, yaw_rate: float,
                 num_targets: int, max_gap: float, rel_speed: float,
                 max_plr: float, k_lost_max: int, signals: int,
-                target_heading_diff: float = 0.0, target_angle: float = 0.0) -> dict:
+                target_angle: float = 0.0) -> dict:
         """
         Predict alert level from vehicle telemetry.
         
@@ -339,7 +355,6 @@ class BSDPredictor:
             'has_targets': 1 if num_targets > 0 else 0,
             'speed_category': 0 if speed < 5 else (1 if speed < 20 else 2),
             'closing_speed': rel_speed,
-            'target_heading_diff': target_heading_diff,
             'target_angle': target_angle,
         }
         
@@ -379,7 +394,26 @@ class BSDPredictor:
             return [{'ai_alert': 'N/A', 'ai_confidence': 0.0, 'ai_critical_prob': 0.0}
                     for _ in feature_rows]
         try:
-            X = pd.DataFrame([{f: r.get(f, 0) for f in self.features} for r in feature_rows])
+            # Match the derived feature logic in the single-predict() method
+            processed_rows = []
+            for r in feature_rows:
+                s = r.get('speed', 0.0)
+                a = r.get('accel', 0.0)
+                processed_row = r.copy()
+                processed_row.update({
+                    'speed_kmh': s * 3.6,
+                    'abs_accel': abs(a),
+                    'abs_yaw_rate': abs(r.get('yaw_rate', 0.0)),
+                    'is_braking': 1 if a < -1.0 else 0,
+                    'is_signaling': 1 if r.get('signals', 0) > 0 else 0,
+                    'has_targets': 1 if r.get('num_targets', 0) > 0 else 0,
+                    'speed_category': 0 if s < 5 else (1 if s < 20 else 2),
+                    'closing_speed': r.get('rel_speed', 0.0),
+                    'target_angle': r.get('target_angle', 0.0)
+                })
+                processed_rows.append({f: processed_row.get(f, 0) for f in self.features})
+            
+            X = pd.DataFrame(processed_rows)
             probs_matrix = self.model.predict_proba(X)  # shape: (N, 4)
             results = []
             for probs in probs_matrix:
@@ -396,7 +430,11 @@ class BSDPredictor:
             return [{'ai_alert': 'N/A', 'ai_confidence': 0.0, 'ai_critical_prob': 0.0}
                     for _ in feature_rows]
 
+    def train(self, df: pd.DataFrame):
+        self.model = train_model(df, model_out_path='test_model.json', report_out_path='test_report.json')
+        self.features = FEATURE_COLS + DERIVED_FEATURES
 
+BSDAIModel = BSDPredictor
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

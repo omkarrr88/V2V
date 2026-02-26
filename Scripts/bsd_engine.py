@@ -374,21 +374,29 @@ class BSDEngine:
         d_gap = |ŷ_rel| - (L_e + L_t)/2
         """
         heading_diff = target.heading - ego.heading
-        v_rel = ego.speed - target.speed * np.cos(heading_diff)
-        a_rel = ego.accel - target.accel * np.cos(heading_diff)
+        v_tgt_proj = target.speed * np.cos(heading_diff)
+        a_tgt_proj = target.accel * np.cos(heading_diff)
+        
+        # Positive = closing speed
+        if y_hat >= 0:
+            v_rel = ego.speed - v_tgt_proj
+            a_rel = ego.accel - a_tgt_proj
+        else:
+            v_rel = v_tgt_proj - ego.speed
+            a_rel = a_tgt_proj - ego.accel
 
         d_gap = abs(y_hat) - (ego.length + target.length) / 2.0
-        if d_gap <= 0:
-            d_gap = 0.01  # touching — imminent
 
         ttc = float('inf')
 
+        if d_gap <= 0:
+            ttc = 0.0
         # Case 1: vehicles separating
-        if v_rel <= 0 and a_rel >= 0:
+        elif v_rel <= 0 and a_rel >= 0:
             return 0.0, 0.0, 0.0  # TTC = ∞ → R_ttc = 0
 
         # Case 2: near-zero acceleration (linear)
-        if abs(a_rel) < 1e-5:
+        elif abs(a_rel) < 1e-5:
             if v_rel > 0:
                 ttc = d_gap / v_rel
         else:
