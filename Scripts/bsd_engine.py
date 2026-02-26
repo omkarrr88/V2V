@@ -58,9 +58,9 @@ class Params:
     V_LAT_MAX   = 1.0       # m/s — max lane-change lateral speed
 
     # CRI Weights (α + β + γ = 1.0)
-    ALPHA       = 0.15      # — R_decel weight (tuned via optimize_weights.py)
+    ALPHA       = 0.20      # — R_decel weight (tuned via optimize_weights.py)
     BETA        = 0.80      # — R_ttc weight
-    GAMMA       = 0.05      # — R_intent weight
+    GAMMA       = -0.00      # — R_intent weight
     EPSILON     = 0.30      # — PLR penalty coefficient
 
     # Alert Thresholds
