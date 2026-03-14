@@ -107,8 +107,8 @@ The derived framework confirms that eliminating SAE `signals` (turn indicator br
 
 ### B. Coordinate Transformation
 A standardized Cartesian orientation assumes structural ego-centricity oriented longitudinally to the ego vehicle $V_e$. Identifying relative targeting mapping $(x_{rel}, y_{rel})$ requires the inverse rotational translation $R(-\theta_e)$:
-$$ x_{rel} = \cos(-\theta_e) \cdot \Delta x - \sin(-\theta_e) \cdot \Delta y $$
-$$ y_{rel} = \sin(-\theta_e) \cdot \Delta x + \cos(-\theta_e) \cdot \Delta y $$
+$$x_{rel} = \sin(\theta_e) \cdot \Delta x - \cos(\theta_e) \cdot \Delta y$$
+$$y_{rel} = \cos(\theta_e) \cdot \Delta x + \sin(\theta_e) \cdot \Delta y$$
 where $\Delta x = x_t - x_e$ and $\Delta y = y_t - y_e$. Realized positions establishing $x_{rel} > 0$ correspond directly to adjacent objects populating the primary right-hand boundary plane.
 
 ### C. Dynamic Blind Spot Zone Geometry
@@ -205,10 +205,10 @@ Operational logic configurations strictly map values established corresponding d
 | **Detection Range** | $R_{max}$ | 300 | m | DSRC functional hardware reach |
 | **GPS Uncertainty** | $\sigma_{gps}$ | 1.5 | m | Standard Gaussian positional tracking limit |
 | **Reaction Time** | $T_{react}$ | 1.2 | s | AASHTO 85th percentile metric [6] |
-| **Baseline Friction** | $\mu$ | 0.85 | - | Standard dry asphalt grip metric |
+| **Baseline Friction** | $\mu$ | 0.70 | - | Standard dry asphalt grip metric |
 | **Lane Width Limits** | $W_{lane}$ | 3.5 | m | Mean global geometric span constant |
-| **Critical TTC Limit** | $\text{TTC}_{crit}$ | 6.0 | s | Threshold designating explicit boundary warning |
-| **Maximum TTC Limit** | $\text{TTC}_{max}$ | 12.0 | s | Final attenuation edge |
+| **Critical TTC Limit** | $\text{TTC}_{crit}$ | 4.0 | s | Threshold designating explicit boundary warning |
+| **Maximum TTC Limit** | $\text{TTC}_{max}$ | 8.0 | s | Final attenuation edge |
 | **Safe Boundary** | $\theta_1$ | 0.30 | - | Baseline CAUTION condition trigger |
 | **Warning Boundary** | $\theta_2$ | 0.60 | - | Baseline WARNING condition trigger |
 | **Critical Boundary** | $\theta_3$ | 0.80 | - | Emergency CRITICAL condition trigger |
