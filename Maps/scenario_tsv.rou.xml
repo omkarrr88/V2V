@@ -1,0 +1,15 @@
+<routes>
+    <vType id="compliant" minGap="2.0" accel="2.6" decel="4.5" maxSpeed="15.0" color="0,255,0"/>
+    <vType id="violator" minGap="1.0" accel="3.2" decel="4.5" maxSpeed="20.0" color="255,0,0"/>
+
+    <route id="r1" edges="A0A1 A1B1"/>
+    <route id="r2" edges="B0A0 A0A1"/>
+    <route id="r3" edges="A1A0 A0B0"/>
+    <route id="r4" edges="B1A1 A1A0"/>
+
+    <!-- High density intersection crossing flows -->
+    <flow id="f1" type="compliant" route="r1" begin="0" end="360" probability="0.6"/>
+    <flow id="f2" type="compliant" route="r2" begin="0" end="360" probability="0.6"/>
+    <flow id="f3" type="compliant" route="r3" begin="0" end="360" probability="0.6"/>
+    <flow id="f4" type="compliant" route="r4" begin="0" end="360" probability="0.6"/>
+</routes>

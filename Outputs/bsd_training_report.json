@@ -2,21 +2,22 @@
   "features": [
     "speed",
     "accel",
-    "yaw_rate",
+    "decel",
     "num_targets",
-    "signals",
     "max_gap",
     "rel_speed",
     "max_plr",
     "k_lost_max",
     "speed_kmh",
     "abs_accel",
-    "abs_yaw_rate",
     "is_braking",
-    "is_signaling",
+    "brake_ratio",
+    "abs_net_accel",
     "has_targets",
     "speed_category",
-    "closing_speed"
+    "closing_speed",
+    "scenario_tsv",
+    "scenario_hnr"
   ],
   "label_map": {
     "0": "SAFE",
@@ -24,66 +25,67 @@
     "2": "WARNING",
     "3": "CRITICAL"
   },
-  "accuracy": 0.9110503861918969,
+  "accuracy": 0.8655843445938559,
   "cv_std": 0.0,
-  "n_training_samples": 107588,
+  "n_training_samples": 110676,
   "n_classes": 4,
   "feature_importance": {
-    "speed": 0.040853068232536316,
-    "accel": 0.030359024181962013,
-    "yaw_rate": 0.03279077261686325,
-    "num_targets": 0.04280669987201691,
-    "signals": 0.031443219631910324,
-    "max_gap": 0.08977425843477249,
-    "rel_speed": 0.03165983781218529,
-    "max_plr": 0.09562668949365616,
-    "k_lost_max": 0.026214538142085075,
-    "speed_kmh": 0.04451129212975502,
-    "abs_accel": 0.023658866062760353,
-    "abs_yaw_rate": 0.024569576606154442,
-    "is_braking": 0.01838506944477558,
-    "is_signaling": 0.043639808893203735,
-    "has_targets": 0.3844563066959381,
-    "speed_category": 0.021793412044644356,
-    "closing_speed": 0.017457542940974236
+    "speed": 0.017044736322246703,
+    "accel": 0.027267786484769765,
+    "decel": 0.145847478837097,
+    "num_targets": 0.028157779558127823,
+    "max_gap": 0.05992136975957962,
+    "rel_speed": 0.012505024850780436,
+    "max_plr": 0.028462472228846264,
+    "k_lost_max": 0.013602370923436222,
+    "speed_kmh": 0.014311875091552817,
+    "abs_accel": 0.021118444965313853,
+    "is_braking": 0.07735116883110651,
+    "brake_ratio": 0.010004156262113593,
+    "abs_net_accel": 0.07744715434866117,
+    "has_targets": 0.3375727503163465,
+    "speed_category": 0.09401757291912669,
+    "closing_speed": 0.012363552000626318,
+    "scenario_tsv": 0.012089809233042762,
+    "scenario_hnr": 0.010914497067225968
   },
   "classification_report": {
     "SAFE": {
-      "precision": 0.9987451374074539,
-      "recall": 0.9206743977558633,
-      "f1-score": 0.958122037468964,
-      "support": 34579.0
+      "precision": 0.9982760303158442,
+      "recall": 0.8753814997575515,
+      "f1-score": 0.9327983951855566,
+      "support": 35059.0
     },
     "CAUTION": {
-      "precision": 0.20898716119828817,
-      "recall": 0.7085852478839177,
-      "f1-score": 0.3227760947397411,
-      "support": 827.0
+      "precision": 0.15487959442332067,
+      "recall": 0.6721672167216721,
+      "f1-score": 0.2517511330861145,
+      "support": 909.0
     },
     "WARNING": {
-      "precision": 0.211864406779661,
-      "recall": 0.5543237250554324,
-      "f1-score": 0.30656039239730226,
-      "support": 451.0
+      "precision": 0.16555555555555557,
+      "recall": 0.5601503759398496,
+      "f1-score": 0.2555746140651801,
+      "support": 532.0
     },
     "CRITICAL": {
-      "precision": 0.3333333333333333,
-      "recall": 0.16666666666666666,
-      "f1-score": 0.2222222222222222,
-      "support": 6.0
+      "precision": 0.71,
+      "recall": 0.8068181818181818,
+      "f1-score": 0.7553191489361702,
+      "support": 88.0
     },
-    "accuracy": 0.9110503861918969,
+    "accuracy": 0.8655843445938559,
     "macro avg": {
-      "precision": 0.438232509679684,
-      "recall": 0.5875625093404699,
-      "f1-score": 0.4524201867070574,
-      "support": 35863.0
+      "precision": 0.5071777950736801,
+      "recall": 0.7286293185593138,
+      "f1-score": 0.5488608228182553,
+      "support": 36588.0
     },
     "weighted avg": {
-      "precision": 0.9705264851289898,
-      "recall": 0.9110503861918969,
-      "f1-score": 0.9351540538798647,
-      "support": 35863.0
+      "precision": 0.9645211668779256,
+      "recall": 0.8655843445938559,
+      "f1-score": 0.9056044193881808,
+      "support": 36588.0
     }
   }
 }

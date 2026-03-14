@@ -14,6 +14,8 @@ def run_sim(param, val):
         cmd.extend(['--ttc-crit', str(val)])
     elif param == 'THETA_3':
         cmd.extend(['--theta-3', str(val)])
+    elif param == 'MU':
+        cmd.extend(['--mu', str(val)])
 
     subprocess.run(cmd, stdout=subprocess.DEVNULL)
     
@@ -37,7 +39,8 @@ def main():
         'SIGMA_GPS': [0.5, 1.0, 1.5, 2.0, 3.0],
         'PLR': [0.01, 0.05, 0.10, 0.20],
         'TTC_CRIT': [2.0, 4.0, 6.0, 8.0],
-        'THETA_3': [0.70, 0.75, 0.80, 0.85]
+        'THETA_3': [0.70, 0.75, 0.80, 0.85],
+        'MU': [0.40, 0.55, 0.70, 0.85],  # Friction coefficient sweep (§9.2 HNR)
     }
 
     results = []

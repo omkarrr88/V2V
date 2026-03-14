@@ -15,23 +15,45 @@ This model defines a mathematically rigorous, computationally complete framework
 **Communication Protocol:**
 Vehicles broadcast Basic Safety Messages (BSM) conforming to SAE J2735 over DSRC (IEEE 802.11p) or C-V2X (3GPP) at a frequency of $f_{BSM} = 10$ Hz (i.e., every $\Delta t = 0.1$ s). Maximum effective communication range is $R_{comm} = 300$ m for DSRC.
 
-**State Vector:**
-The state of vehicle $i \in \{e, t\}$ at time $t$ is:
-$$ \mathbf{S}_i(t) = \left[ X_i(t),\; Y_i(t),\; v_i(t),\; a_i(t),\; \theta_i(t),\; \dot{\theta}_i(t),\; L_i,\; W_i,\; M_i,\; \mu(t) \right] $$
+### 1.1 BSM Input Vector (5-Field Specification)
 
-**Variable Definitions:**
+The BSM carries exactly **5 observable fields** per broadcast:
 
-| Symbol | Description | Source | Unit |
-|--------|-------------|--------|------|
-| $X_i, Y_i$ | Global position coordinates | RTK-GPS / GNSS | m |
-| $v_i$ | Longitudinal velocity (scalar, $\geq 0$) | Wheel speed sensors / CAN bus | m/s |
-| $a_i$ | Longitudinal acceleration ($+$ = accelerating, $-$ = braking) | IMU / CAN bus | m/s² |
-| $\theta_i$ | Heading angle (counterclockwise from positive X-axis) | GPS/IMU heading | rad |
-| $\dot{\theta}_i$ | Yaw rate (rate of heading change) | Gyroscope / IMU / steering angle sensor | rad/s |
-| $L_i$ | Vehicle length | Static vehicle parameter | m |
-| $W_i$ | Vehicle width | Static vehicle parameter | m |
-| $M_i$ | Vehicle mass | OBD-II / CAN bus (Ego); estimated from BSM Part II vehicle classification (Target) | kg |
-| $\mu(t)$ | Road surface friction coefficient | ABS/TCS sensor estimation | — |
+$$ \text{BSM}_{input} = \{ X_i,\; Y_i,\; v_i,\; a^+_i,\; d^+_i \} $$
+
+| Symbol | Description | Constraint | Unit |
+|--------|-------------|------------|------|
+| $X_i, Y_i$ | GPS Cartesian position (SUMO coordinate frame) | — | m |
+| $v_i$ | Scalar speed magnitude | $\geq 0$ | m/s |
+| $a^+_i$ | Positive longitudinal acceleration | $\geq 0$; set to 0 if decelerating | m/s² |
+| $d^+_i$ | Positive deceleration magnitude | $\geq 0$; set to 0 if accelerating | m/s² |
+
+> **Semantic Note:** The split into $a^+$ and $d^+$ ensures both quantities are always non-negative in the BSM. The signed net acceleration used internally by the physics engine is reconstructed as $a_{net} = a^+ - d^+$. This representation cleanly separates throttle intent from braking capability — the latter is directly used in $R_{decel}$ (§5.1).
+
+### 1.2 Derived Quantities
+
+All other quantities required by the physics engine are **derived** from the 5-field BSM history and static vehicle metadata. They are **not transmitted** over V2V.
+
+| Derived Quantity | Symbol | Derivation | Notes |
+|------------------|--------|------------|-------|
+| Heading | $\theta_i$ | $\text{atan2}(Y_i(t) - Y_i(t-1),\; X_i(t) - X_i(t-1))$ | From consecutive BSM positions |
+| Yaw rate | $\dot{\theta}_i$ | $(\theta_i(t) - \theta_i(t-1)) / \Delta t$ | $\Delta t = 0.1$ s (BSM rate) |
+| Net acceleration | $a_{net}$ | $a^+ - d^+$ | Signed; negative = braking |
+| Vehicle length | $L_i$ | Lookup from `vehicle_type` defaults | sedan=4.5m, SUV=4.8m, truck=12.0m |
+| Vehicle width | $W_i$ | Lookup from `vehicle_type` defaults | sedan=1.8m, SUV=2.0m, truck=2.5m |
+| Vehicle mass | $M_i$ | Lookup from `Params.AERO` table | sedan=1500kg, SUV=2200kg, truck=15000kg |
+| Road friction | $\mu$ | Default $\mu_{default} = 0.7$; scenario-overridable | See §9 for scenario overrides |
+| Turn signals | — | **Not available from BSM** — treated as 0 | See §5.3 update |
+| Vehicle type | — | SUMO `vTypeID`, read once at spawn, cached | Not part of BSM broadcast |
+
+> **Heading Derivation — Low-Speed Guard:** When $v_i < 0.5$ m/s (vehicle nearly stopped), the position delta per BSM step is $\leq 0.05$ m — smaller than typical GPS noise ($\sigma_{gps} = 1.5$ m). In this regime, `atan2` heading becomes unreliable. **Guard:** When $v_i < 0.5$ m/s, retain the previous heading: $\theta_i(t) = \theta_i(t-1)$. For the first-seen case (no previous state), set $\theta_i = 0.0$ and $\dot{\theta}_i = 0.0$.
+
+> **Heading Derivation — Accuracy Validation:** At 10 Hz BSM rate and typical urban speed $v = 13.9$ m/s (50 km/h), the position delta per step is $\approx 1.39$ m. With $\sigma_{gps} = 1.5$ m, the heading noise is $\approx \text{atan2}(\sigma_{gps}, \Delta d) \approx 0.82$ rad in the worst case, but averages well below $0.07$ rad due to the Gauss-Markov correlated GPS error model. At highway speed ($v = 30$ m/s), the delta per step is $3.0$ m, giving heading resolution $\approx 0.03$ rad — more than sufficient for `_to_ego_frame()` and `_curvature_correction()`.
+
+### 1.3 Full Internal State Vector
+
+The complete internal state of vehicle $i$ at time $t$, after BSM parsing and derivation:
+$$ \mathbf{S}_i(t) = \left[ X_i,\; Y_i,\; v_i,\; a^+_i,\; d^+_i,\; a_{net,i},\; \theta_i,\; \dot{\theta}_i,\; L_i,\; W_i,\; M_i,\; \mu \right] $$
 
 **Typical Friction Values:**
 
@@ -39,13 +61,15 @@ $$ \mathbf{S}_i(t) = \left[ X_i(t),\; Y_i(t),\; v_i(t),\; a_i(t),\; \theta_i(t),
 |-------------------|-------------|
 | Dry asphalt | 0.7 – 0.8 |
 | Wet asphalt | 0.4 – 0.5 |
+| Hilly/gravel mountain road | 0.50 – 0.60 |
 | Packed snow | 0.2 – 0.3 |
 | Ice | 0.08 – 0.15 |
 
 > **SUMO Implementation Notes:**
-> - **Yaw rate:** SUMO does not output yaw rate as a continuous signal. It must be computed from consecutive heading outputs: $\dot{\theta}_i(t) \approx \frac{\theta_i(t) - \theta_i(t - \Delta t)}{\Delta t}$.
-> - **Angle conversion:** SUMO's `traci.vehicle.getAngle()` returns heading in degrees measured clockwise from North. Convert to the mathematical convention used in this model via: $\theta_{math} = \frac{\pi}{2} - \theta_{SUMO} \cdot \frac{\pi}{180}$.
-> - **Friction coefficient:** In SUMO, $\mu$ is not dynamically sensed. It is read from the road network definition file (`friction` attribute per edge/lane) and treated as a known constant per road segment. In real-world deployment, $\mu$ is estimated dynamically via ABS/TCS wheel slip ratio analysis.
+> - **BSM construction:** `traci.vehicle.getAcceleration()` returns signed acceleration. Split as: $a^+ = \max(0, a_{traci})$ and $d^+ = \max(0, -a_{traci})$.
+> - **Heading derivation:** In SUMO, heading CAN be obtained directly via `traci.vehicle.getAngle()`, but to validate the 5-field BSM pipeline, the `BSMParser` class derives heading from consecutive `(X, Y)` positions using `atan2`. The SUMO angle is NOT used as a BSM field.
+> - **Angle conversion (reference only):** SUMO's `getAngle()` returns heading in degrees measured clockwise from North. Conversion to mathematical convention: $\theta_{math} = \frac{\pi}{2} - \theta_{SUMO} \cdot \frac{\pi}{180}$.
+> - **Friction coefficient:** In SUMO, $\mu$ is not dynamically sensed. Default $\mu = 0.7$ (dry asphalt). For scenario contexts (§9), $\mu$ is overridden programmatically.
 
 ---
 
@@ -395,11 +419,13 @@ $$ R_{ttc, lat} = \begin{cases} 1.0 - \frac{TTC_{lat}}{TTC_{critical}} & \text{i
 
 A vehicle in the blind spot is primarily dangerous if the Ego vehicle **intends to merge** into its lane. This component captures lane-change intent from the Ego's own behavior.
 
-**Turn Signal Indicator (Direction-Matched):**
+**Turn Signal Indicator — Unavailable in 5-Field BSM:**
 
-$$ I_{turn} = \begin{cases} 1 & \text{if } (\text{side}(V_t) = \text{LEFT} \text{ and left blinker active}) \text{ or } (\text{side}(V_t) = \text{RIGHT} \text{ and right blinker active}) \\ 0 & \text{otherwise} \end{cases} $$
+With the 5-field BSM specification (§1.1), turn signal data is **not transmitted**. The $I_{turn}$ term is therefore always zero:
 
-Only a blinker toward the **same side as the detected target** contributes to intent. A left blinker with a right-side target (or vice versa) produces $I_{turn} = 0$.
+$$ I_{turn} = 0 \quad \text{(turn signal data not available from BSM)} $$
+
+> **Justification:** Removing the turn signal term is physically valid because lateral drift ($v_{lat,toward}$) is the kinematic observable that captures actual lane-change behavior. A turn signal is an *intent declaration* that may or may not correspond to actual vehicle motion. The lateral drift term captures the physical reality — the vehicle IS moving laterally — which is what matters for collision avoidance. In practice, many real-world lane changes occur without signaling, making $I_{turn}$ unreliable even when available.
 
 **Lateral Velocity Toward Threat (Direction-Aware):**
 
@@ -415,18 +441,21 @@ $$ v_{lat,toward} = \begin{cases} \max(0,\; +v_{lat,e}) & \text{if } \text{side}
 
 > **Sign Rationale:** In this model's convention, counterclockwise (left turn) gives $\dot{\theta}_e > 0$ and thus $v_{lat,e} > 0$. Clockwise (right turn) gives $\dot{\theta}_e < 0$ and thus $v_{lat,e} < 0$. The $\max(0, \cdot)$ with appropriate sign ensures only drift **toward** the threat side produces a positive contribution.
 
-**Intent Risk:**
-$$ R_{intent} = w_{sig} \cdot I_{turn} + w_{lat} \cdot \min\!\left(1,\; \frac{v_{lat,toward}}{v_{lat,max}}\right) $$
+**Intent Risk (5-Field BSM — Lateral Drift Only):**
+$$ R_{intent} = w_{lat} \cdot \min\!\left(1,\; \frac{v_{lat,toward}}{v_{lat,max}}\right) $$
+
+Since $I_{turn} = 0$, the full formula reduces to:
+$$ R_{intent} = w_{lat} \cdot \text{lat\_ratio} $$
 
 | Parameter | Value | Justification |
 |-----------|-------|---------------|
-| $w_{sig}$ | 0.4 | Turn signal is a strong intent indicator |
-| $w_{lat}$ | 0.6 | Actual lateral drift is an even stronger indicator |
+| $w_{sig}$ | 0.4 | Turn signal weight (inactive — $I_{turn} = 0$ always) |
+| $w_{lat}$ | 0.6 | Lateral drift captures actual lane-change kinematics |
 | $v_{lat,max}$ | 1.0 m/s | Typical lane change (3.5 m over 3–5 s ≈ 0.7–1.2 m/s) |
 
-Since $w_{sig} + w_{lat} = 1.0$ and each term is in $[0, 1]$, $R_{intent} \in [0, 1]$ is guaranteed.
+With only lateral drift active: $R_{intent} \in [0, 0.6]$. The CRI weight $\gamma$ compensates for this reduced range.
 
-> **SUMO Note:** Turn signal state is accessible via `traci.vehicle.getSignals()`. Bit 0 = right blinker, Bit 1 = left blinker. For lateral velocity, the **primary method** is the yaw-rate-based formula above. As a verification alternative, `traci.vehicle.getLateralLanePosition()` differential between consecutive timesteps can be used, but the yaw-rate method takes precedence as it is available in both SUMO and real-world deployments.
+> **SUMO Note:** Turn signal state (`traci.vehicle.getSignals()`) is accessible in SUMO but is NOT included in the 5-field BSM to maintain the minimal input surface. The `BSMParser` class does not extract or transmit signal data. For lateral velocity, the **primary method** is the yaw-rate-based formula above, where $\dot{\theta}_e$ is derived from consecutive BSM positions (§1.2).
 
 ---
 
@@ -434,22 +463,26 @@ Since $w_{sig} + w_{lat} = 1.0$ and each term is in $[0, 1]$, $R_{intent} \in [0
 
 The final CRI combines the probabilistic presence, physical risk components, and communication reliability into a single score in $[0, 1]$. This is computed **per target vehicle** and then assigned to the appropriate side (left/right) per Section 3.4.
 
-$$ CRI_{final}(V_t) = P(V_t \in Z_{bs}) \times \left( \alpha \cdot R_{decel} + \beta \cdot R_{ttc} + \gamma \cdot R_{intent} \right) \times (1 + \epsilon \cdot PLR) $$
+$$ CRI_{final}(V_t) = P(V_t \in Z_{bs}) \times \underbrace{\max(R_{decel},\; R_{ttc})}_{\text{severity gate}} \times \underbrace{\left( \alpha \cdot R_{decel} + \beta \cdot R_{ttc} + \gamma \cdot R_{intent} \right)}_{\text{weighted risk}} \times (1 + \epsilon \cdot PLR) $$
+
+**Severity Gate — $\max(R_{decel}, R_{ttc})$:**
+
+The multiplicative severity gate ensures that CRI is only elevated when at least one risk dimension has independently reached a meaningful level. Without this gate, the weighted sum $(\alpha \cdot R_{decel} + \beta \cdot R_{ttc} + \gamma \cdot R_{intent})$ can produce non-trivial CRI values even when all individual risk components are moderate (e.g., $R_{decel} = 0.3, R_{ttc} = 0.2$). The gate suppresses these low-severity compound scores by multiplying the weighted sum by the dominant single-component risk, producing a quadratic suppression effect for low-risk scenarios and near-linear amplification for high-risk scenarios. This separates the V3.0 model from simpler additive risk scores.
 
 **Weight Definitions and Justification:**
 
 | Parameter | V2.4 Default | V3.0 Optimized | Optimization Method |
 |-----------|-------------|----------------|---------------------|
-| $\alpha$ ($R_{decel}$) | 0.35 | 0.15 | Grid search (run optimize_weights.py to update) |
+| $\alpha$ ($R_{decel}$) | 0.35 | 0.20 | Grid search (`optimize_weights.py`) |
 | $\beta$ ($R_{ttc}$)   | 0.45 | 0.80 | Grid search, lateral-aware near-miss proxy |
-| $\gamma$ ($R_{intent}$) | 0.20 | 0.05 | Grid search |
-| $\epsilon$ | 0.30 | 0.30 | PLR penalty |
+| $\gamma$ ($R_{intent}$) | 0.20 | 0.00 | Set to 0 — turn signals unavailable in 5-field BSM (§5.3) |
+| $\epsilon$ | 0.30 | 0.30 | PLR penalty coefficient |
 
-*Constraint:* $\alpha + \beta + \gamma = 1.0$, ensuring the weighted risk sum is in $[0, 1]$ before the PLR modifier.
+*Constraint:* $\alpha + \beta + \gamma = 1.0$, ensuring the weighted risk sum is in $[0, 1]$ before the PLR and severity gate modifiers.
 
-*Note:* Weights were selected based on relative collision causation priority and are subject to empirical calibration using SUMO simulation data. The PLR modifier $(1 + \epsilon \cdot PLR)$ scales the risk upward under degraded communication (maximum amplification at $PLR = 1.0$ is $1.30$).
+*Note on $\gamma = 0$:* With the 5-field BSM specification, turn signal data is not available. The $R_{intent}$ component captures only lateral drift, which is bounded by $w_{lat} = 0.6$. Setting $\gamma = 0$ transfers its weight to the physics-based components that have full observability. If turn signal data becomes available in a future BSM extension, $\gamma$ should be re-optimized to a non-zero value.
 
-**Boundary Behavior Justification:** The multiplicative structure ensures that if $P(V_t \in Z_{bs}) = 0$ (the target is definitively outside the blind spot zone), then $CRI_{final} = 0$ regardless of the risk component values. This is physically correct — a vehicle that is not in the blind spot poses no blind-spot-specific collision risk. The probabilistic GPS treatment in Section 4.1 ensures that $P$ transitions smoothly (not as a hard binary step) across the zone boundary, with the transition width governed by $\sigma_{gps}$. At $\sigma_{gps} = 1.5$ m, the transition band is approximately $\pm 3$ m (3σ) around each boundary, providing a sufficiently smooth gradient.
+**Boundary Behavior Justification:** The multiplicative structure ensures that if $P(V_t \in Z_{bs}) = 0$ (the target is definitively outside the blind spot zone), then $CRI_{final} = 0$ regardless of the risk component values. Similarly, if $\max(R_{decel}, R_{ttc}) = 0$, CRI is zero even if $P > 0$ — this correctly handles the case where a vehicle is geometrically in the blind spot but poses no physical collision threat. The probabilistic GPS treatment in Section 4.1 ensures that $P$ transitions smoothly (not as a hard binary step) across the zone boundary, with the transition width governed by $\sigma_{gps}$. At $\sigma_{gps} = 1.5$ m, the transition band is approximately $\pm 3$ m (3σ) around each boundary, providing a sufficiently smooth gradient.
 
 **Final Clamping:**
 $$ CRI_{final} = \text{clamp}(CRI_{final},\; 0,\; 1) $$
@@ -501,6 +534,7 @@ All parameters used in this model, in one consolidated table:
 | $R_{comm}$ | 300 | m | Maximum V2V communication range | §1 |
 | $g$ | 9.81 | m/s² | Gravitational acceleration | §5.1 |
 | $W_{lane}$ | 3.5 (default) | m | Standard lane width (configurable) | §3.3 |
+| $W_{lane,narrow}$ | 2.8 | m | Narrow lane width for HNR scenario | §9.2 |
 | $L_{base}$ | 4.5 | m | Minimum blind spot length | §3.1 |
 | $v_{min}$ | 2.0 | m/s | Minimum velocity for BSD scaling | §3.1 |
 | $v_{max}$ | 40.0 | m/s | Maximum velocity for BSD scaling | §3.1 |
@@ -518,52 +552,139 @@ All parameters used in this model, in one consolidated table:
 | $\epsilon_a$ | $10^{-3}$ | m/s² | Relative acceleration threshold | §5.2 |
 | $TTC_{critical}$ | 4.0 | s | TTC imminent collision threshold | §5.2 |
 | $TTC_{max}$ | 8.0 | s | TTC maximum evaluation horizon | §5.2 |
-| $w_{sig}$ | 0.4 | — | Turn signal intent weight | §5.3 |
+| $w_{sig}$ | 0.4 | — | Turn signal intent weight (inactive in 5-field BSM) | §5.3 |
 | $w_{lat}$ | 0.6 | — | Lateral drift intent weight | §5.3 |
 | $v_{lat,max}$ | 1.0 | m/s | Maximum expected lateral velocity | §5.3 |
-| $\alpha$ | 0.15 | — | CRI weight: deceleration risk | §6 |
+| $\alpha$ | 0.20 | — | CRI weight: deceleration risk | §6 |
 | $\beta$ | 0.80 | — | CRI weight: TTC risk | §6 |
-| $\gamma$ | 0.05 | — | CRI weight: intent risk | §6 |
+| $\gamma$ | 0.00 | — | CRI weight: intent risk (zero — signals unavailable) | §6 |
 | $\epsilon$ | 0.30 | — | CRI weight: PLR penalty | §6 |
 | $\theta_1$ | 0.30 | — | Alert threshold: CAUTION | §7.1 |
 | $\theta_2$ | 0.60 | — | Alert threshold: WARNING | §7.1 |
 | $\theta_3$ | 0.80 | — | Alert threshold: CRITICAL | §7.1 |
 | $\delta_h$ | 0.05 | — | Alert hysteresis band | §7.2 |
 | $N_h$ | 3 | timesteps | Alert upgrade persistence count | §7.2 |
+| $\mu_{default}$ | 0.7 | — | Default road friction (dry asphalt) | §1.2 |
+| $\mu_{hilly}$ | 0.55 | — | Friction for hilly/wet mountain roads | §9.2 |
+| $T_{TSV}$ | 60 | steps | Duration of each TSV scenario burst | §9.1 |
+| $T_{HNR}$ | 90 | steps | Duration of each HNR scenario burst | §9.2 |
+| $T_{repeat}$ | 300 | steps | Interval between scenario repetitions | §9 |
 
 ---
 
-## 9. Assumptions, Scope, and Limitations
+## 9. Scenario Definitions
 
-### 9.1 Core Assumptions
+The V3.0 model supports repeating scenario injections that stress-test specific aspects of the BSD pipeline. Each scenario modulates the physics context (friction, lane width) and traffic behaviour to create challenging detection conditions.
+
+### 9.1 Scenario A: Traffic Signal Violation (TSV)
+
+**Definition:** A signalised intersection where vehicles are assigned one of two behavioural classes:
+- **Compliant** ($V_c$): Stops on red, proceeds on green. Normal driver dynamics (`accel=2.6`, `decel=4.5`, `speedFactor=0.9`).
+- **Violator** ($V_v$): Runs red lights. Aggressive dynamics (`accel=3.2`, `decel=4.5`, `speedFactor=1.15`, `jmDriveAfterRedTime=10`).
+
+**Spatial Region of Interest:** The intersection box, defined by the junction geometry in the SUMO network. For the dedicated intersection map (`intersection_tsv.net.xml`), this is the central junction node with 4 approaches.
+
+**Temporal Trigger:** Signal phase transitions. When the traffic light enters a red phase, the `TSVInjector` identifies approaching vehicles within 50m of the stop line and randomly designates a fraction ($p_{violator} = 0.3$) as violators, overriding their speed via `traci.vehicle.setSpeed()` to maintain velocity through the intersection.
+
+**BSD Challenge:** When a violator crosses paths with a compliant vehicle stopped at the intersection, high-lateral-proximity events occur (the violator passes through the compliant vehicle's blind spot at speed). BSD must correctly identify these as CRITICAL or WARNING threats despite the unusual kinematics (one vehicle stationary, the other crossing at speed).
+
+**Physics Context:**
+- $\mu = \mu_{default} = 0.7$ (dry urban road)
+- $W_{lane} = 3.5$ m (standard)
+- The scenario generates high $R_{ttc}$ events due to near-zero gap situations at the crossing point
+
+**Timing:**
+- Scenario fires every $T_{repeat} = 300$ steps
+- Each TSV burst lasts $T_{TSV} = 60$ steps (6 seconds at 0.1s step)
+- Tagged in metrics CSV as `scenario_type = "TSV"`
+
+### 9.2 Scenario B: Hilly Narrow Road (HNR)
+
+**Definition:** A winding road geometry with tight curvature, narrow lanes, and reduced friction simulating a mountainous environment.
+
+**Geometric Parameters:**
+- Radius of curvature: $R_{curve} < 30$ m (tight bends)
+- Lane width: $W_{lane,narrow} = 2.8$ m (narrower than default 3.5 m)
+- Total road length: $\geq 600$ m (multiple vehicles present simultaneously)
+- At least 4 consecutive curves (S-bends with radius $\leq 25$ m each)
+
+**Friction Approximation:** True elevation change is not modelled in SUMO's 2D plane. Instead, the combined effect of gradient + wet/gravel surface is approximated via friction reduction:
+$$ \mu_{hilly} = 0.55 $$
+This is within the wet asphalt range (0.4–0.5) augmented slightly to account for the 2D approximation being conservative.
+
+**BSD Challenge:** On tight bends, the clothoid curvature correction (§3.2) becomes critical — without it, the standard Cartesian blind-spot zone incorrectly classifies oncoming vehicles on the opposite side of the curve. The dynamic blind-spot length $L_{bs}$ must be computed correctly even at low speeds typical of mountain roads ($v < V_{MIN} = 2.0$ m/s gives $L_{bs} = L_{base}$). The narrow lane width ($W_{lane} = 2.8$ m) reduces the lateral blind-spot zone, making side-by-side positioning more dangerous.
+
+**Scenario Trigger:** Repeated entry into designated bend segments (identified by edge ID in the hilly road network). When vehicles enter the bend region:
+- `engine.set_scenario_context("hilly")` sets $W_{lane} = 2.8$ m and $\mu = 0.55$
+- Vehicles are slowed to 20–40 km/h via `traci.vehicle.slowDown()`
+- Some vehicles attempt overtaking manoeuvres on the narrow road, triggering blind-spot events
+
+**Timing:**
+- Scenario fires every $T_{repeat} = 300$ steps
+- Each HNR burst lasts $T_{HNR} = 90$ steps (9 seconds)
+- Tagged in metrics CSV as `scenario_type = "HNR"`
+
+### 9.3 Scenario Context Injection
+
+The `BSDEngine` supports a method `set_scenario_context(scenario_name)` that modulates the active physics parameters:
+
+| Context | $\mu$ | $W_{lane}$ | Notes |
+|---------|-------|------------|-------|
+| `"normal"` | 0.70 | 3.5 m | Default — dry urban/highway |
+| `"TSV"` | 0.70 | 3.5 m | Same physics, high-risk traffic |
+| `"hilly"` | 0.55 | 2.8 m | Wet mountain road |
+
+### 9.4 Ground Truth Definition for Simulation Evaluation
+
+To rigorously evaluate the model's accuracy, a binary ground truth $y_{true}(t)$ is defined using a kinematic near-miss proxy. A simulation step for target $V_t$ is considered a true positive hazard if:
+
+$$
+y_{true}(t) = 1 \iff 
+\begin{cases}
+  (1) & \text{in\_zone} = \text{True} \quad \text{(target geometrically within blind-spot zone), AND} \\
+  (2) & \left[ \text{gap} < 1.0\text{ m} \right] \text{ OR } \left[ TTC_{proxy} < 2.0\text{ s} \text{ AND } rel\_speed > 0.5\text{ m/s} \right]\text{, AND} \\
+  (3) & v_e > 2.0\text{ m/s} \quad \text{(ego is moving)}
+\end{cases}
+$$
+*OR* if an actual SUMO collision event (`ground_truth_collision == 1`) occurs.
+
+**Justification:** The blind-spot zone filter (`in_zone`) ensures we only penalise the BSD system for failing to alert on vehicles *actually inside* the blind spot. The tightened gap (1.0m) and TTC (2.0s) thresholds, combined with the relative speed guard, prevent false near-miss accumulation in dense, slow-moving traffic queues where division-by-zero instablity otherwise inflates the TTC proxy.
+
+---
+
+## 10. Assumptions, Scope, and Limitations
+
+### 10.1 Core Assumptions
 1.  All vehicles in the network are equipped with V2V communication hardware and broadcast BSMs at 10 Hz conforming to SAE J2735.
 2.  GPS/GNSS provides position with accuracy characterized by $\sigma_{gps}$. The default value of $1.5$ m represents standard consumer-grade GNSS. RTK-GPS ($\sigma_{gps} = 0.5$ m) improves performance but is not assumed. Degraded GPS (urban canyons, tunnels) is only partially addressed via dead reckoning; extended GNSS outage is outside scope.
-3.  The road surface friction coefficient $\mu$ is assumed known or estimable in real-time via ABS/TCS wheel slip ratio sensors. In SUMO, $\mu$ is read from the network definition file (`friction` attribute per edge/lane) and treated as a known constant per road segment.
+3.  The road surface friction coefficient $\mu$ is assumed known or estimable in real-time via ABS/TCS wheel slip ratio sensors. In SUMO, $\mu$ is not dynamically sensed; it defaults to 0.7 and can be overridden per scenario context (§9.3).
 4.  Vehicles are modeled as axis-aligned bounding boxes in the ego-centric frame. Complex vehicle geometries (e.g., articulated trucks) are approximated.
 5.  The CA-CYR dead reckoning model assumes constant acceleration and constant yaw rate over the prediction horizon $\tau_{eff}$. This is valid for $\tau_{eff} \leq 0.5$ s. Beyond this, the target state should be flagged as stale (see Section 4.2).
 6.  The GPS antenna position is assumed to coincide with the vehicle's geometric center. The lever-arm offset (typically 1–2 m) is within $\sigma_{gps}$ and is absorbed by the probabilistic treatment (see Section 2).
-7.  **Vehicle mass ($M_t$):** The standard SAE J2735 BSM does not include vehicle mass. In this model, $M_t$ is estimated from the vehicle type classification field available in BSM Part II (e.g., passenger car ≈ 1500 kg, SUV ≈ 2200 kg, heavy truck ≈ 15000 kg). **Fallback:** When BSM Part II data is absent (which is common in early deployments), a default mass of $M_{default} = 1800$ kg (approximate average passenger vehicle) is used. For the Ego vehicle, $M_e$ is known from the local OBD-II / CAN bus. In SUMO, mass is directly accessible via `traci.vehicle.getParameter()`.
+7.  **Vehicle mass ($M_t$):** Estimated from the vehicle type classification field (e.g., passenger car ≈ 1500 kg, SUV ≈ 2200 kg, heavy truck ≈ 15000 kg). **Fallback:** When type is unknown, $M_{default} = 1800$ kg is used.
+8.  **Turn signals are NOT part of the 5-field BSM.** Lane-change intent is captured solely via lateral drift kinematics ($v_{lat,toward}$). This is justified in §5.3.
 
-### 9.2 Scope Statement
+### 10.2 Scope Statement
 This model is a **pure V2V-based** blind spot detection system. It relies exclusively on data received via V2V BSM broadcasts. Real-world ADAS/AV systems typically fuse V2V data with onboard sensors (radar, camera, LiDAR, ultrasonic). Sensor fusion architectures are outside the scope of this model but represent a natural extension. The V2V-only approach is valid for both simulation evaluation and as the V2V processing module within a larger sensor-fused ADAS pipeline.
 
-### 9.3 Known Limitations
+### 10.3 Known Limitations
 1.  **Non-V2V-equipped vehicles** (legacy vehicles, pedestrians, cyclists) are invisible to this system.
 2.  **Multi-lane scenarios** (3+ lanes): The lateral boundary checks the immediately adjacent lane only. Extension to multi-lane blindspot would require expanding $W_{lane}$ to $n \cdot W_{lane}$.
-3.  **Elevation changes** (hills, ramps): The model operates in a 2D horizontal plane. Significant grade differences may cause false positives/negatives in $y_{rel}$.
+3.  **Elevation changes** (hills, ramps): The model operates in a 2D horizontal plane. Significant grade differences may cause false positives/negatives in $y_{rel}$. The HNR scenario (§9.2) approximates elevation effects via friction reduction.
 4.  **Communication security:** The model assumes BSM data is authentic. Spoofing and misbehavior detection are outside scope.
 5.  **NLOS (Non-Line-Of-Sight) propagation:** DSRC/C-V2X signals can be blocked or attenuated by large vehicles, buildings, and terrain features. NLOS conditions degrade communication reliability (increasing $PLR$ and $\tau_{eff}$) and are a primary failure mode of real DSRC systems. This model accounts for the *effects* of NLOS via the PLR penalty term in the CRI, but does not explicitly model NLOS geometry or signal propagation.
 6.  **Ego-only curvature correction:** The clothoid correction in Section 3.2 compensates only for the Ego vehicle's own trajectory curvature. The Target vehicle's independent curvature is not modeled. This approximation is valid when both vehicles follow the same road curve, but accuracy degrades in diverging-trajectory scenarios (e.g., roundabouts, exit ramps).
 7.  **Aerodynamic drag approximation:** The drag term in $a_{max,t}$ uses vehicle-class-typical values for $C_d$ and $A_f$. Per-vehicle aerodynamic data is not available via BSM. At typical urban/highway speeds ($\leq 120$ km/h), the drag contribution to deceleration is $< 5\%$ of total braking force, making this approximation acceptable.
-8.  **Intent detection is Ego-only:** $R_{intent}$ captures only the **Ego vehicle's** lane-change intent (turn signal, lateral drift). A target vehicle drifting into the Ego's lane would not be captured by $R_{intent}$. However, this scenario IS captured by $R_{ttc}$ (closing distance) and $R_{decel}$ (stopping distance), so the overall CRI still responds to target-side lateral intrusions — just via the physics components rather than the intent component.
+8.  **Intent detection is Ego-only and drift-based only:** $R_{intent}$ captures only the **Ego vehicle's** lateral drift (no turn signal data). A target vehicle drifting into the Ego's lane would not be captured by $R_{intent}$. However, this scenario IS captured by $R_{ttc}$ (closing distance) and $R_{decel}$ (stopping distance), so the overall CRI still responds to target-side lateral intrusions.
 9.  **[V3.0 RESOLVED]** Lateral sideswipe risk is now captured by the Lateral TTC section. The combined $R_{ttc}$ = max($R_{ttc,lon}$, $R_{ttc,lat}$) accounts for both longitudinal closure and lateral convergence of adjacent-lane vehicles. Remaining open limitation: W_gap assumes constant 1-lane separation; in multi-lane merges this may underestimate lateral gap.
+10. **Heading derivation from position:** When vehicle speed is below 0.5 m/s, heading is unreliable and the system retains the previous heading (§1.2). This may cause brief heading inaccuracy during stop-start transitions.
 
 > **Implementation Note (Dual Counter Requirement):** Each target vehicle requires two separate counters maintained per-side: (1) $k_{lost}$ — consecutive dropped packets for dead reckoning $\tau_{eff}$ computation, and (2) a sliding window buffer of $N_{plr} = 10$ reception flags for PLR computation. These track different aspects of communication quality and must not be conflated.
 
 
 ---
 
-## 10. Experimental Validation
+## 11. Experimental Validation
 
 The V3.0 model is validated through four complementary experimental methodologies, each 
 implemented in the accompanying Python scripts and designed to run on SUMO simulation data.

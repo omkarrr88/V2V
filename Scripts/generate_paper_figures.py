@@ -171,6 +171,42 @@ def fig_risk_components(df):
     print(f'✅ Saved: {path}')
 
 
+# ── Figure 6: Scenario Comparison Timeseries ───────────────────────────────
+def fig_scenario_comparison(df):
+    if 'scenario_type' not in df.columns or 'step' not in df.columns:
+        print('⚠️  No scenario_type column — skipping scenario comparison'); return
+    
+    cri = df[['cri_left', 'cri_right']].max(axis=1)
+    df_plot = df.copy()
+    df_plot['cri_max'] = cri
+    
+    fig, ax = plt.subplots(figsize=(12, 5))
+    
+    scenario_colors = {'normal': '#3B82F6', 'TSV': '#EF4444', 'HNR': '#F59E0B'}
+    
+    for sc_type in df_plot['scenario_type'].unique():
+        sc_df = df_plot[df_plot['scenario_type'] == sc_type]
+        if sc_df.empty:
+            continue
+        step_mean = sc_df.groupby('step')['cri_max'].mean()
+        color = scenario_colors.get(sc_type, '#64748B')
+        ax.plot(step_mean.index, step_mean.values, color=color, lw=1.2, alpha=0.8, label=sc_type)
+        ax.fill_between(step_mean.index, step_mean.values, alpha=0.1, color=color)
+    
+    # Mark scenario boundaries
+    ax.axhline(Params.THETA_1, color='#F59E0B', ls=':', lw=1, alpha=0.5)
+    ax.axhline(Params.THETA_2, color='#F97316', ls=':', lw=1, alpha=0.5)
+    ax.axhline(Params.THETA_3, color='#EF4444', ls=':', lw=1, alpha=0.5)
+    
+    ax.set(xlabel='Simulation Step', ylabel='Mean CRI (max side)',
+           title='CRI Evolution by Scenario Type')
+    ax.legend(loc='upper right')
+    path = FIG_DIR / 'fig6_scenario_comparison.png'
+    fig.savefig(path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print(f'✅ Saved: {path}')
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     print(f'Generating paper figures → {FIG_DIR}')
@@ -186,14 +222,17 @@ def main():
     fig_feature_importance()
     fig_alert_timeline(df)
     fig_risk_components(df)
+    fig_scenario_comparison(df)
 
     print(f'\n✅ All figures saved to {FIG_DIR}')
-    print('   fig1_roc_curve.png         — submit as Fig. 5 in paper')
-    print('   fig2_cri_distribution.png  — submit as Fig. 3 in paper')
-    print('   fig3_feature_importance.png — submit as Fig. 6 in paper')
-    print('   fig4_alert_timeline.png    — submit as Fig. 4 in paper')
-    print('   fig5_risk_components.png   — submit as Fig. 2 in paper')
+    print('   fig1_roc_curve.png              — ROC comparison')
+    print('   fig2_cri_distribution.png       — CRI distribution')
+    print('   fig3_feature_importance.png     — AI feature importance')
+    print('   fig4_alert_timeline.png         — Alert level evolution')
+    print('   fig5_risk_components.png        — Risk component distributions')
+    print('   fig6_scenario_comparison.png    — Scenario CRI timeseries')
 
 
 if __name__ == '__main__':
     main()
+

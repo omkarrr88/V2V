@@ -5,4 +5,6 @@ scikit-learn>=1.0.0
 scipy>=1.7.0
 streamlit>=1.25.0
 plotly>=5.10.0
+matplotlib>=3.5.0
+imbalanced-learn>=0.11.0
 sumolib

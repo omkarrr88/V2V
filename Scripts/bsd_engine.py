@@ -4,6 +4,9 @@ V2V Blind Spot Detection Engine — V3.0 Mathematical Model Implementation
 Direct implementation of the Comprehensive Mathematical Model for V2V BSD.
 Every formula, parameter, and edge case from the V3.0 spec is implemented here.
 
+BSM Input: 5 fields only — x, y, speed, accel, decel
+All other quantities (heading, yaw_rate, net_accel, etc.) are derived.
+
 Author: V2V BSD Research Project
 """
 
@@ -53,14 +56,14 @@ class Params:
     TTC_MAX     = 8.0       # s  — maximum TTC horizon
 
     # Intent
-    W_SIG       = 0.4       # — turn signal weight
+    W_SIG       = 0.4       # — turn signal weight (inactive — signals not in BSM)
     W_LAT       = 0.6       # — lateral drift weight
     V_LAT_MAX   = 1.0       # m/s — max lane-change lateral speed
 
     # CRI Weights (α + β + γ = 1.0)
     ALPHA       = 0.20      # — R_decel weight (tuned via optimize_weights.py)
     BETA        = 0.80      # — R_ttc weight
-    GAMMA       = -0.00      # — R_intent weight
+    GAMMA       = 0.00      # — R_intent weight (zero — signals unavailable)
     EPSILON     = 0.30      # — PLR penalty coefficient
 
     # Alert Thresholds
@@ -74,11 +77,25 @@ class Params:
     M_DEFAULT   = 1800.0    # kg — default target mass (BSM Part II absent)
     MU_DEFAULT  = 0.7       # — default dry asphalt friction
 
+    # Scenario Parameters (§9)
+    W_LANE_NARROW = 2.8     # m  — narrow lane width for HNR scenario
+    MU_HILLY      = 0.55    # — friction for hilly/wet mountain roads
+    SCENARIO_TSV_DURATION   = 60   # steps — each TSV burst duration
+    SCENARIO_HNR_DURATION   = 90   # steps — each HNR burst duration
+    SCENARIO_REPEAT_INTERVAL = 300 # steps — interval between scenario repetitions
+
     # Typical Vehicle Aerodynamics
     AERO = {
         'sedan': {'Cd': 0.30, 'Af': 2.2, 'M': 1500},
         'suv':   {'Cd': 0.35, 'Af': 3.0, 'M': 2200},
         'truck': {'Cd': 0.60, 'Af': 8.0, 'M': 15000},
+    }
+
+    # Vehicle dimension defaults (for BSMParser lookup)
+    VEHICLE_DEFAULTS = {
+        'sedan': {'length': 4.5, 'width': 1.8, 'mass': 1500},
+        'suv':   {'length': 4.8, 'width': 2.0, 'mass': 2200},
+        'truck': {'length': 12.0, 'width': 2.5, 'mass': 15000},
     }
 
 
@@ -91,21 +108,146 @@ class AlertLevel(Enum):
 
 @dataclass
 class VehicleState:
-    """State vector S_i for a vehicle (Section 1)."""
+    """
+    State vector S_i for a vehicle (Section 1).
+    5 BSM fields + derived quantities.
+    """
     vid: str
-    x: float            # GPS X position (m)
-    y: float            # GPS Y position (m)
-    speed: float        # velocity magnitude (m/s)
-    accel: float        # longitudinal acceleration (m/s²)
-    heading: float      # heading angle θ in radians (math convention: CCW from +X)
-    yaw_rate: float     # dθ/dt (rad/s)
-    length: float       # vehicle length (m)
-    width: float        # vehicle width (m)
-    mass: float         # vehicle mass (kg)
-    mu: float           # road friction coefficient
-    signals: int        # turn signal bitfield (bit 0 = right, bit 1 = left)
+    # --- BSM Fields (5 transmitted) ---
+    x: float            # BSM field 1: GPS X position (m)
+    y: float            # BSM field 2: GPS Y position (m)
+    speed: float        # BSM field 3: scalar speed (m/s), ≥ 0
+    accel: float        # BSM field 4: positive acceleration (m/s²), ≥ 0
+    decel: float        # BSM field 5: positive deceleration magnitude (m/s²), ≥ 0
+    # --- Derived (computed by BSMParser, not transmitted) ---
+    heading: float      # derived from position delta (rad)
+    yaw_rate: float     # derived from heading delta (rad/s)
+    net_accel: float    # = accel - decel (signed longitudinal acceleration)
+    length: float       # from vehicle_type default table (m)
+    width: float        # from vehicle_type default table (m)
+    mass: float         # from vehicle_type default table (kg)
+    mu: float           # default or scenario-overridden friction coefficient
     vehicle_type: str   # 'sedan', 'suv', 'truck'
     timestamp: int      # simulation step when BSM was generated
+
+
+class BSMParser:
+    """
+    Parses raw 5-field BSM dicts into fully-populated VehicleState objects.
+    Derives heading, yaw_rate, net_accel from BSM history.
+    Implements §1.2 of the Mathematical Model.
+    """
+
+    def __init__(self, mu_override: float = None, w_lane_override: float = None):
+        """
+        Args:
+            mu_override: If set, all parsed states use this mu value
+            w_lane_override: Not stored in state, but available for engine queries
+        """
+        self._prev_states: Dict[str, dict] = {}  # vid -> {x, y, heading, timestamp}
+        self._mu_override = mu_override if mu_override is not None else Params.MU_DEFAULT
+        self._w_lane_override = w_lane_override
+
+    @property
+    def active_mu(self) -> float:
+        return self._mu_override
+
+    @property
+    def active_w_lane(self) -> float:
+        return self._w_lane_override if self._w_lane_override is not None else Params.W_LANE
+
+    def set_scenario_context(self, scenario_name: str):
+        """Set physics overrides based on active scenario (§9.3)."""
+        if scenario_name == "hilly":
+            self._mu_override = Params.MU_HILLY
+            self._w_lane_override = Params.W_LANE_NARROW
+        elif scenario_name == "TSV":
+            self._mu_override = Params.MU_DEFAULT
+            self._w_lane_override = Params.W_LANE
+        else:  # "normal"
+            self._mu_override = Params.MU_DEFAULT
+            self._w_lane_override = Params.W_LANE
+
+    def parse(self, raw_bsm: dict) -> VehicleState:
+        """
+        Parse a raw 5-field BSM dict into a VehicleState.
+        
+        Args:
+            raw_bsm: dict with keys: vid, x, y, speed, accel, decel, vehicle_type, timestamp
+        
+        Returns:
+            Fully populated VehicleState with derived fields.
+        """
+        vid = raw_bsm['vid']
+        x = raw_bsm['x']
+        y = raw_bsm['y']
+        speed = raw_bsm['speed']
+        accel = raw_bsm['accel']
+        decel = raw_bsm['decel']
+        vtype_raw = raw_bsm.get('vehicle_type', 'sedan').lower()
+        timestamp = raw_bsm.get('timestamp', 0)
+
+        # Classify vehicle type
+        if 'truck' in vtype_raw:
+            vtype = 'truck'
+        elif 'suv' in vtype_raw:
+            vtype = 'suv'
+        else:
+            vtype = 'sedan'
+
+        # Lookup dimensions
+        defaults = Params.VEHICLE_DEFAULTS.get(vtype, Params.VEHICLE_DEFAULTS['sedan'])
+        length = defaults['length']
+        width = defaults['width']
+        mass = defaults['mass']
+
+        # Net acceleration
+        net_accel = accel - decel
+
+        # Derive heading from position delta (§1.2)
+        prev = self._prev_states.get(vid)
+        if prev is not None:
+            dx = x - prev['x']
+            dy = y - prev['y']
+            
+            # Low-speed guard: when speed < 0.5 m/s, heading unreliable
+            if speed >= 0.5 and (abs(dx) > 1e-6 or abs(dy) > 1e-6):
+                heading = np.arctan2(dy, dx)
+            else:
+                heading = prev['heading']
+            
+            # Yaw rate from heading delta
+            d_heading = heading - prev['heading']
+            # Wrap to [-π, π]
+            d_heading = (d_heading + np.pi) % (2 * np.pi) - np.pi
+            yaw_rate = d_heading / Params.DT
+        else:
+            # First-seen case — no previous state
+            heading = 0.0
+            yaw_rate = 0.0
+
+        # Cache current state for next derivation
+        self._prev_states[vid] = {
+            'x': x, 'y': y,
+            'heading': heading,
+            'timestamp': timestamp,
+        }
+
+        return VehicleState(
+            vid=vid,
+            x=x, y=y, speed=speed,
+            accel=accel, decel=decel,
+            heading=heading, yaw_rate=yaw_rate,
+            net_accel=net_accel,
+            length=length, width=width, mass=mass,
+            mu=self._mu_override,
+            vehicle_type=vtype,
+            timestamp=timestamp,
+        )
+
+    def evict(self, vid: str):
+        """Remove a vehicle from the derivation cache."""
+        self._prev_states.pop(vid, None)
 
 
 @dataclass
@@ -140,12 +282,14 @@ class BSDEngine:
     - §5.1: R_decel with friction + aero drag
     - §5.2: R_ttc second-order with all edge cases
     - §5.2.1: Lateral Time-To-Collision (TTC_lat)
-     §5.3: R_intent direction-aware with Ego-only intent.
+     §5.3: R_intent — lateral drift only (no turn signals in 5-field BSM).
     - §6: CRI composition with PLR penalty
     - §7: Alert levels with per-side hysteresis
+    - §9: Scenario context support
     """
 
-    def __init__(self, alpha=None, beta=None, gamma=None, use_lateral_ttc=True, sigma_gps=None, ttc_crit=None, theta_3=None):
+    def __init__(self, alpha=None, beta=None, gamma=None, use_lateral_ttc=True, 
+                 sigma_gps=None, ttc_crit=None, theta_3=None):
         self.target_trackers: Dict[str, TargetTracker] = {}
         self.left_state = SideState()
         self.right_state = SideState()
@@ -160,6 +304,39 @@ class BSDEngine:
         self.sigma_gps = sigma_gps if sigma_gps is not None else Params.SIGMA_GPS
         self.ttc_crit = ttc_crit if ttc_crit is not None else Params.TTC_CRIT
         self.theta_3 = theta_3 if theta_3 is not None else Params.THETA_3
+
+        # Scenario context — physics overrides
+        self._active_scenario = "normal"
+        self._mu_override = None
+        self._w_lane_override = None
+
+    def set_scenario_context(self, scenario_name: str):
+        """
+        Set active scenario context for physics parameter overrides (§9.3).
+        
+        Args:
+            scenario_name: "normal", "TSV", or "hilly"
+        """
+        self._active_scenario = scenario_name
+        if scenario_name == "hilly":
+            self._mu_override = Params.MU_HILLY
+            self._w_lane_override = Params.W_LANE_NARROW
+        elif scenario_name == "TSV":
+            self._mu_override = Params.MU_DEFAULT
+            self._w_lane_override = Params.W_LANE
+        else:  # "normal"
+            self._mu_override = None
+            self._w_lane_override = None
+
+    @property
+    def active_w_lane(self) -> float:
+        """Current effective lane width (scenario-aware)."""
+        return self._w_lane_override if self._w_lane_override is not None else Params.W_LANE
+
+    @property
+    def active_mu(self) -> float:
+        """Current effective friction coefficient (scenario-aware)."""
+        return self._mu_override if self._mu_override is not None else Params.MU_DEFAULT
 
     # ============================================================
     # §2: COORDINATE TRANSFORMATION
@@ -212,7 +389,8 @@ class BSDEngine:
         """
         half_w = ego.width / 2.0
         L_bs = self._compute_L_bs(ego.speed)
-        lat_ok = half_w <= abs(x_corrected) <= half_w + Params.W_LANE
+        w_lane = self.active_w_lane
+        lat_ok = half_w <= abs(x_corrected) <= half_w + w_lane
         lon_ok = -L_bs <= y_rel <= ego.length / 2.0
         return lat_ok and lon_ok
 
@@ -229,22 +407,18 @@ class BSDEngine:
     def _compute_probability(self, ego: VehicleState, x_hat: float, y_hat: float) -> float:
         """
         P(V_t ∈ Z_bs) ≈ |P_lat| × P_lon
-        
-        P_lat = |Φ((x_outer - x̂)/σ) - Φ((x_inner - x̂)/σ)|
-        P_lon = Φ((y_front - ŷ)/σ) - Φ((y_rear - ŷ)/σ)
-        
-        x_outer = sgn(x̂) · (W_e/2 + W_lane)
-        x_inner = sgn(x̂) · (W_e/2)
+        Uses scenario-aware W_LANE.
         """
         sigma = self.sigma_gps
         half_w = ego.width / 2.0
         L_bs = self._compute_L_bs(ego.speed)
+        w_lane = self.active_w_lane
         
         if x_hat >= 0:
             x_inner = half_w
-            x_outer = half_w + Params.W_LANE
+            x_outer = half_w + w_lane
         else:
-            x_inner = -(half_w + Params.W_LANE)
+            x_inner = -(half_w + w_lane)
             x_outer = -half_w
         
         y_front = ego.length / 2.0
@@ -273,14 +447,15 @@ class BSDEngine:
         """
         Predict target relative position after delay τ_eff using the Constant Acceleration
         kinematic model in the GLOBAL frame, then converting to EGO frame.
+        Uses net_accel for signed acceleration.
         """
         # Hard stale cap
         if tau_eff > 0.5:
             return 0.0, 0.0, True
 
-        # Extrapolate target position in GLOBAL frame
-        x_t_pred = target.x + target.speed * np.cos(target.heading) * tau_eff + 0.5 * target.accel * np.cos(target.heading) * (tau_eff ** 2)
-        y_t_pred = target.y + target.speed * np.sin(target.heading) * tau_eff + 0.5 * target.accel * np.sin(target.heading) * (tau_eff ** 2)
+        # Extrapolate target position in GLOBAL frame using net_accel
+        x_t_pred = target.x + target.speed * np.cos(target.heading) * tau_eff + 0.5 * target.net_accel * np.cos(target.heading) * (tau_eff ** 2)
+        y_t_pred = target.y + target.speed * np.sin(target.heading) * tau_eff + 0.5 * target.net_accel * np.sin(target.heading) * (tau_eff ** 2)
 
         # Transform to EGO frame
         x_pred_rel, y_pred_rel = self._to_ego_frame(ego, x_t_pred, y_t_pred)
@@ -328,17 +503,13 @@ class BSDEngine:
                          y_hat: float) -> float:
         """
         R_decel based on friction-limited stopping distance vs bumper-to-bumper gap.
-        
-        D_stop_req = v_t · T_react + v_t² / (2 · a_max_t)
-        a_max_t = μ·g + F_drag/(M_t)
-        d_gap = |ŷ_rel| - (L_e + L_t)/2
-        R_decel = min(1, exp(-k_brake · (d_gap - D_stop) / D_stop))  if d_gap > 0
-                = 1.0  if d_gap ≤ 0
+        Uses target.decel directly as braking capability (positive magnitude).
+        Uses scenario-aware mu.
         """
         # a_max with aerodynamic drag assistance
         aero = Params.AERO.get(target.vehicle_type, Params.AERO['sedan'])
         v_t = target.speed
-        mu = target.mu if target.mu > 0 else Params.MU_DEFAULT
+        mu = target.mu if target.mu > 0 else self.active_mu
         
         F_drag = 0.5 * Params.RHO_AIR * aero['Cd'] * aero['Af'] * v_t ** 2
         M_t = target.mass if target.mass > 0 else Params.M_DEFAULT
@@ -368,22 +539,19 @@ class BSDEngine:
                        y_hat: float) -> Tuple[float, float, float]:
         """
         Second-order TTC with all edge cases from Section 5.2.
-        
-        v_rel = v_e - v_t·cos(θ_t - θ_e)  (positive = closing)
-        a_rel = a_e - a_t·cos(θ_t - θ_e)
-        d_gap = |ŷ_rel| - (L_e + L_t)/2
+        Uses net_accel for signed acceleration in relative motion.
         """
         heading_diff = target.heading - ego.heading
         v_tgt_proj = target.speed * np.cos(heading_diff)
-        a_tgt_proj = target.accel * np.cos(heading_diff)
+        a_tgt_proj = target.net_accel * np.cos(heading_diff)
         
         # Positive = closing speed
         if y_hat >= 0:
             v_rel = ego.speed - v_tgt_proj
-            a_rel = ego.accel - a_tgt_proj
+            a_rel = ego.net_accel - a_tgt_proj
         else:
             v_rel = v_tgt_proj - ego.speed
-            a_rel = a_tgt_proj - ego.accel
+            a_rel = a_tgt_proj - ego.net_accel
 
         d_gap = abs(y_hat) - (ego.length + target.length) / 2.0
 
@@ -417,9 +585,6 @@ class BSDEngine:
                 return 0.0, 0.0, 0.0  # both negative → collision in past
 
         # TTC to risk score (Section 5.2 table)
-        # R_ttc = 1.0                           if TTC ≤ TTC_crit
-        #       = (TTC_crit / TTC)²             if TTC_crit < TTC ≤ TTC_max
-        #       = 0.0                           otherwise
         if ttc > Params.TTC_MAX:
             R_ttc_longitudinal = 0.0
         elif ttc <= self.ttc_crit:
@@ -429,7 +594,8 @@ class BSDEngine:
 
         # Lateral TTC
         v_lat_rel = target.speed * np.sin(target.heading - ego.heading)
-        W_gap = Params.W_LANE - ego.width / 2.0 - target.width / 2.0
+        w_lane = self.active_w_lane
+        W_gap = w_lane - ego.width / 2.0 - target.width / 2.0
         
         if W_gap <= 0:
             R_ttc_lateral = 1.0
@@ -446,22 +612,22 @@ class BSDEngine:
         return max(R_ttc_longitudinal, R_ttc_lateral), R_ttc_longitudinal, R_ttc_lateral
 
     # ============================================================
-    # §5.3: LATERAL INTENT (R_intent) — Direction-Aware
+    # §5.3: LATERAL INTENT (R_intent) — Drift-Only (No Turn Signals)
     # ============================================================
     def _compute_R_intent(self, ego: VehicleState, target: VehicleState, side: str) -> float:
         """
-        R_intent captures only the Ego vehicle's lane-change intent (turn signal, lateral drift).
+        R_intent captures only the Ego vehicle's lateral drift (5-field BSM).
+        Turn signals are NOT available — I_turn = 0 always.
+        R_intent = W_LAT · lat_ratio
         """
-        # Ego Intent
-        right_blinker = bool(ego.signals & 0x01)
-        left_blinker = bool(ego.signals & 0x02)
-        I_turn = 1.0 if (side == "RIGHT" and right_blinker) or (side == "LEFT" and left_blinker) else 0.0
+        # No turn signal component (signals not in BSM)
+        # I_turn = 0
 
         v_lat_e = ego.speed * np.sin(ego.yaw_rate * Params.DT)
         v_lat_toward = max(0.0, v_lat_e) if side == "LEFT" else max(0.0, -v_lat_e)
         lat_ratio = min(1.0, v_lat_toward / Params.V_LAT_MAX) if Params.V_LAT_MAX > 0 else 0.0
         
-        return Params.W_SIG * I_turn + Params.W_LAT * lat_ratio
+        return Params.W_LAT * lat_ratio
 
     # ============================================================
     # §6: CRI COMPOSITION
@@ -473,8 +639,6 @@ class BSDEngine:
         
         CRI = P(V_t ∈ Z_bs) × (α·R_decel + β·R_ttc + γ·R_intent) × (1 + ε·PLR)
         Clamped to [0, 1].
-        
-        Returns dict with all intermediate values for dashboard logging.
         """
         # Dead reckoning directly in ego frame (Section 4.2)
         tau_eff = self._compute_tau_eff(tracker)
@@ -521,12 +685,16 @@ class BSDEngine:
         # Weighted risk
         R_weighted = self.alpha * R_decel + self.beta * R_ttc + self.gamma * R_intent
 
+        # Severity gate — §6: ensures CRI is only elevated when at least
+        # one risk dimension has independently reached a meaningful level.
+        severity_gate = max(R_decel, R_ttc)
+
         # PLR penalty
         plr = self._compute_plr(tracker)
         plr_multiplier = 1.0 + Params.EPSILON * plr
 
-        # Final CRI (clamped to [0, 1])
-        cri = np.clip(P * R_weighted * plr_multiplier, 0.0, 1.0)
+        # Final CRI with severity gate (clamped to [0, 1])
+        cri = np.clip(P * severity_gate * R_weighted * plr_multiplier, 0.0, 1.0)
 
         return {
             'target_vid': target.vid,
@@ -539,6 +707,7 @@ class BSDEngine:
             'R_ttc_lat': R_ttc_lat,
             'R_intent': R_intent,
             'R_weighted': R_weighted,
+            'severity_gate': severity_gate,
             'plr': plr,
             'plr_multiplier': plr_multiplier,
             'tau_eff': tau_eff,

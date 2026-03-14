@@ -1,0 +1,15 @@
+<configuration>
+    <input>
+        <net-file value="hilly_road.net.xml"/>
+        <route-files value="scenario_hilly.rou.xml"/>
+    </input>
+    <time>
+        <begin value="0"/>
+        <step-length value="0.1"/>
+        <end value="360"/>
+    </time>
+    <processing>
+        <collision.action value="remove"/>
+        <collision.check-junctions value="true"/>
+    </processing>
+</configuration>

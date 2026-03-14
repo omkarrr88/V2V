@@ -131,7 +131,7 @@ def alert_color(alert: str) -> str:
 
 def get_params_safe(raw_dict):
     """Normalize parameter keys to uppercase and provide defaults."""
-    defaults = {"ALPHA": 0.15, "BETA": 0.80, "GAMMA": 0.05, "THETA_3": 0.005}
+    defaults = {"ALPHA": 0.20, "BETA": 0.80, "GAMMA": 0.00, "THETA_3": 0.8}
     if not isinstance(raw_dict, dict): return defaults
     norm = {str(k).upper(): v for k, v in raw_dict.items()}
     # Fill missing from defaults
@@ -167,7 +167,7 @@ def load_metrics_df():
 # ============================================================
 if "mode" not in st.session_state: st.session_state.mode = "LIVE Tracking"
 if "sandbox" not in st.session_state: st.session_state.sandbox = False
-if "sandbox_weights" not in st.session_state: st.session_state.sandbox_weights = {"ALPHA": 0.15, "BETA": 0.80, "GAMMA": 0.05}
+if "sandbox_weights" not in st.session_state: st.session_state.sandbox_weights = {"ALPHA": 0.20, "BETA": 0.80, "GAMMA": 0.00}
 if "frozen_data" not in st.session_state: st.session_state.frozen_data = None
 if "cached_vids" not in st.session_state: st.session_state.cached_vids = []
 
@@ -268,7 +268,7 @@ def render_platinum_ui():
     """, unsafe_allow_html=True)
 
     # 5. TABS FOR DEEP ANALYSIS
-    tab_tactical, tab_analytics, tab_network = st.tabs(["🎯 TACTICAL MAP", "📊 PERFORMANCE LAB", "🌐 NETWORK LAYER"])
+    tab_tactical, tab_analytics, tab_network, tab_scenario = st.tabs(["🎯 TACTICAL MAP", "📊 PERFORMANCE LAB", "🌐 NETWORK LAYER", "🔬 SCENARIO COMPARISON"])
 
     # ------------------------------------------------------------
     # TAB 1: TACTICAL
@@ -432,18 +432,97 @@ def render_platinum_ui():
             fig_comm.update_layout(height=250, paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
             st.plotly_chart(fig_comm, width='stretch')
 
+    # ------------------------------------------------------------
+    # TAB 4: SCENARIO COMPARISON
+    # ------------------------------------------------------------
+    with tab_scenario:
+        st.markdown('<div class="section-head">🔬 SCENARIO CRI COMPARISON</div>', unsafe_allow_html=True)
+        
+        # Load historical metrics for scenario comparison
+        hist_df = load_metrics_df()
+        if hist_df is not None and 'scenario_type' in hist_df.columns:
+            scenario_types = hist_df['scenario_type'].dropna().unique()
+            if len(scenario_types) > 0:
+                col_sc1, col_sc2 = st.columns(2)
+                with col_sc1:
+                    # CRI distribution per scenario
+                    cri_max = hist_df[['cri_left', 'cri_right']].max(axis=1)
+                    hist_df_plot = hist_df.copy()
+                    hist_df_plot['cri_max'] = cri_max
+                    
+                    fig_sc = px.box(hist_df_plot, x='scenario_type', y='cri_max',
+                                    color='scenario_type',
+                                    color_discrete_map={'normal': '#10b981', 'TSV': '#ef4444', 'HNR': '#f59e0b'},
+                                    title='CRI Distribution by Scenario')
+                    fig_sc.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)',
+                                         plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'))
+                    st.plotly_chart(fig_sc, width='stretch')
+                
+                with col_sc2:
+                    # Alert counts per scenario
+                    alert_map = {'SAFE': 0, 'CAUTION': 1, 'WARNING': 2, 'CRITICAL': 3}
+                    hist_df_alerts = hist_df.copy()
+                    hist_df_alerts['max_alert'] = hist_df_alerts[['alert_left', 'alert_right']].apply(
+                        lambda r: max(alert_map.get(str(r['alert_left']).upper(), 0),
+                                     alert_map.get(str(r['alert_right']).upper(), 0)), axis=1)
+                    alert_names = {0: 'SAFE', 1: 'CAUTION', 2: 'WARNING', 3: 'CRITICAL'}
+                    hist_df_alerts['max_alert_name'] = hist_df_alerts['max_alert'].map(alert_names)
+                    
+                    sc_alert_counts = hist_df_alerts.groupby(['scenario_type', 'max_alert_name']).size().reset_index(name='count')
+                    fig_bar = px.bar(sc_alert_counts, x='scenario_type', y='count', color='max_alert_name',
+                                     color_discrete_map={'SAFE': '#10b981', 'CAUTION': '#f59e0b',
+                                                         'WARNING': '#f97316', 'CRITICAL': '#ef4444'},
+                                     title='Alert Level Counts by Scenario', barmode='group')
+                    fig_bar.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)',
+                                          plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'))
+                    st.plotly_chart(fig_bar, width='stretch')
+                    
+                # Summary statistics table
+                st.markdown('<div class="section-head">📊 SCENARIO STATISTICS</div>', unsafe_allow_html=True)
+                summary_rows = []
+                for sc in scenario_types:
+                    sc_df = hist_df_plot[hist_df_plot['scenario_type'] == sc]
+                    summary_rows.append({
+                        'Scenario': sc,
+                        'Samples': len(sc_df),
+                        'Mean CRI': f"{sc_df['cri_max'].mean():.4f}",
+                        'Max CRI': f"{sc_df['cri_max'].max():.4f}",
+                        'Std CRI': f"{sc_df['cri_max'].std():.4f}",
+                        '% Warning+': f"{(sc_df['cri_max'] >= 0.6).mean()*100:.1f}%",
+                        '% Critical': f"{(sc_df['cri_max'] >= 0.8).mean()*100:.1f}%",
+                    })
+                st.dataframe(pd.DataFrame(summary_rows), hide_index=True)
+            else:
+                st.info("No scenario data available. Run simulation with --enable-tsv or --enable-hnr.")
+        else:
+            st.info("No scenario data available. Run simulation with scenarios enabled to see comparisons.")
+
 # ============================================================
 # SIDEBAR RE-INTEGRATED
 # ============================================================
 with st.sidebar:
     st.markdown("""
     <div style="text-align: center; margin-bottom: 30px;">
-        <h2 style="margin:0; color:#6366f1; font-weight:800; font-size:1.8rem;">PLATINUM V3.2</h2>
-        <div style="font-size:0.7rem; color:#94a3b8; letter-spacing:2px;">INTELLIGENCE ENGINE</div>
+        <h2 style="margin:0; color:#6366f1; font-weight:800; font-size:1.8rem;">PLATINUM V3.3</h2>
+        <div style="font-size:0.7rem; color:#94a3b8; letter-spacing:2px;">5-FIELD BSM ENGINE</div>
     </div>
     """, unsafe_allow_html=True)
     
     st.session_state.mode = st.radio("SELECT MODE", ["LIVE Tracking", "Historical Replay"], help="Switch between real-time and post-sim analysis")
+
+    # Scenario Status Panel
+    st.markdown("---")
+    st.markdown("### 🎯 SCENARIO STATUS")
+    live_sc = load_live_data()
+    if live_sc:
+        active_scenario = live_sc.get('scenario', 'normal')
+        sc_color = {'normal': '#10b981', 'TSV': '#ef4444', 'HNR': '#f59e0b'}.get(active_scenario, '#64748b')
+        st.markdown(f'<div style="font-size:0.9rem;">Active: <span style="color:{sc_color}; font-weight:700;">{active_scenario}</span></div>', unsafe_allow_html=True)
+        alert_counts = live_sc.get('alert_counts', {})
+        total_alerts = alert_counts.get('warning', 0) + alert_counts.get('critical', 0)
+        st.markdown(f'<div style="font-size:0.8rem; color:#94a3b8;">W+C Alerts: {total_alerts}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div style="font-size:0.8rem; color:#94a3b8;">Waiting for simulation data...</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     st.markdown("### 🧪 PARAMETER SANDBOX")

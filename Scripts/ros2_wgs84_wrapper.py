@@ -42,10 +42,20 @@ except ImportError:
 class BSDEngineROS2Wrapper:
     """
     Standard ROS2 async subscriber wrapper around BSDEngine.
+    
+    5-Field BSM Pipeline (V3.0):
+    1. Incoming J2735 BSM is decoded to extract: lat, lon, speed, accel_signed
+    2. (lat, lon) → (x, y) via WGS84Converter.to_local()
+    3. accel_signed → (accel=max(0,a), decel=max(0,-a))
+    4. Raw BSM dict {vid, x, y, speed, accel, decel, vehicle_type, timestamp}
+       is passed to BSMParser.parse() which derives heading, yaw_rate, net_accel
+    5. Resulting VehicleState is fed to BSDEngine.process_step()
     """
-    def __init__(self, bsd_engine):
+    def __init__(self, bsd_engine, bsm_parser=None):
+        from bsd_engine import BSMParser
         self.engine = bsd_engine
-        self.wgs84 = WGS84Converter(lat0=18.98, lon0=72.93) # Atal Setu Bridge origin
+        self.parser = bsm_parser if bsm_parser else BSMParser()
+        self.wgs84 = WGS84Converter(lat0=18.98, lon0=72.93)  # Atal Setu Bridge origin
         
         try:
             rclpy.init()
@@ -61,13 +71,34 @@ class BSDEngineROS2Wrapper:
             pass
 
     def bsm_callback(self, msg):
-        """Async callback for incoming J2735 Basic Safety Messages."""
-        # This would decode J2735 and pass to engine
-        # ego_state = get_current_ego_state()
-        # target_state = decode_bsm(msg)
-        # target_state.x, target_state.y = self.wgs84.to_local(target_state.lat, target_state.lon)
-        # 
-        # self.engine.process_step(ego_state, {target_state.vid: target_state}, set([target_state.vid]))
-        # 
-        # publish alerts...
+        """
+        Async callback for incoming J2735 Basic Safety Messages.
+        
+        Decodes J2735, extracts 5 BSM fields, parses via BSMParser,
+        then feeds to BSDEngine.
+        """
+        # bsm_data = decode_j2735(msg.data)
+        # x, y = self.wgs84.to_local(bsm_data['latitude'], bsm_data['longitude'])
+        # accel_signed = bsm_data['longitudinal_accel']
+        #
+        # raw_bsm = {
+        #     'vid': bsm_data['temporary_id'],
+        #     'x': x, 'y': y,
+        #     'speed': bsm_data['speed'],
+        #     'accel': max(0.0, accel_signed),   # BSM field 4
+        #     'decel': max(0.0, -accel_signed),   # BSM field 5
+        #     'vehicle_type': bsm_data.get('vehicle_class', 'sedan'),
+        #     'timestamp': bsm_data.get('sec_mark', 0),
+        # }
+        #
+        # target_state = self.parser.parse(raw_bsm)
+        #
+        # ego_state = get_current_ego_state()  # From local CAN bus / IMU
+        # result = self.engine.process_step(ego_state, {target_state.vid: target_state},
+        #                                    {target_state.vid})
+        #
+        # alert_msg = String()
+        # alert_msg.data = json.dumps(result)
+        # self.alert_pub.publish(alert_msg)
         pass
+

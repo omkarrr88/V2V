@@ -43,13 +43,12 @@ MODEL_FILE   = "../Outputs/bsd_xgboost_model.json"
 ENCODER_FILE = "../Outputs/bsd_label_encoder.pkl"
 REPORT_FILE  = "../Outputs/bsd_training_report.json"
 
-# Features used for prediction
+# Features used for prediction (5-field BSM: accel/decel split)
 FEATURE_COLS = [
-    'speed',           # Ego speed (m/s)
-    'accel',           # Ego acceleration
-    'yaw_rate',        # Ego yaw rate
+    'speed',           # Ego speed (m/s) — BSM field 3
+    'accel',           # Ego positive acceleration (m/s²) — BSM field 4
+    'decel',           # Ego positive deceleration (m/s²) — BSM field 5
     'num_targets',     # Nearby V2V targets
-    'signals',         # Turn signal state
     'max_gap',         # Closest target longitudinal gap (m)
     'rel_speed',       # Relative speed to closest threat target (m/s)
     'max_plr',         # Maximum PLR among active targets
@@ -59,39 +58,90 @@ FEATURE_COLS = [
 # Adding derived features for better prediction
 DERIVED_FEATURES = [
     'speed_kmh',       # Speed in km/h
-    'abs_accel',       # |acceleration|
-    'abs_yaw_rate',    # |yaw_rate|
-    'is_braking',      # accel < -1.0
-    'is_signaling',    # any turn signal on
+    'abs_accel',       # |net_acceleration| = |accel - decel|
+    'is_braking',      # decel > 1.0
+    'brake_ratio',     # decel / max(speed, 0.1)
+    'abs_net_accel',   # |accel - decel|
     'has_targets',     # num_targets > 0
     'speed_category',  # 0=slow, 1=medium, 2=fast
     'closing_speed',   # Equivalent to rel_speed
+    'scenario_tsv',    # 1 if in TSV scenario
+    'scenario_hnr',    # 1 if in HNR scenario
 ]
 
-# NOTE: target_angle is computed externally (by sim from GPS positions) and logged to CSV,
-# but is NOT included here because DERIVED_FEATURES must only contain features that
-# add_derived_features() can compute from raw BSM telemetry alone.
-# For realtime deployment, this feature would require inter-vehicle position data
-# which is already captured indirectly through max_gap and other proximity features.
+# NOTE: yaw_rate and signals are no longer in FEATURE_COLS.
+# yaw_rate is derived from positions and not directly predictive.
+# signals are not available in the 5-field BSM.
 
 TARGET_COL = 'alert_level'  # What we predict: 0=SAFE, 1=CAUTION, 2=WARNING, 3=CRITICAL
 
 
 def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Add engineered features for better ML prediction."""
+    """Add engineered features for better ML prediction (5-field BSM)."""
     df = df.copy()
+    
+    # Ensure decel column exists (backward compat with older CSVs)
+    if 'decel' not in df.columns:
+        df['decel'] = 0.0
+        if 'accel' in df.columns:
+            df['decel'] = df['accel'].clip(upper=0).abs()
+            df['accel'] = df['accel'].clip(lower=0)
+    
     df['speed_kmh'] = df['speed'] * 3.6
-    df['abs_accel'] = df['accel'].abs()
-    df['abs_yaw_rate'] = df['yaw_rate'].abs()
-    df['is_braking'] = (df['accel'] < -1.0).astype(int)
-    df['is_signaling'] = (df['signals'] > 0).astype(int)
+    net_accel = df['accel'] - df['decel']
+    df['abs_accel'] = net_accel.abs()
+    df['is_braking'] = (df['decel'] > 1.0).astype(int)
+    df['brake_ratio'] = df['decel'] / df['speed'].clip(lower=0.1)
+    df['abs_net_accel'] = net_accel.abs()
     df['has_targets'] = (df['num_targets'] > 0).astype(int)
     df['speed_category'] = pd.cut(df['speed'], bins=[-1, 5, 20, 100], labels=[0, 1, 2]).astype(int)
     if 'rel_speed' in df.columns:
         df['closing_speed'] = df['rel_speed']
     else:
         df['closing_speed'] = 0.0
+    # Scenario flags (default 0 if column doesn't exist)
+    if 'scenario_type' in df.columns:
+        df['scenario_tsv'] = (df['scenario_type'] == 'TSV').astype(int)
+        df['scenario_hnr'] = (df['scenario_type'] == 'HNR').astype(int)
+    else:
+        df['scenario_tsv'] = 0
+        df['scenario_hnr'] = 0
     return df
+
+
+def generate_critical_scenarios(n=300) -> pd.DataFrame:
+    """Generate synthetic near-collision rows for the rare CRITICAL class to aid modeling."""
+    np.random.seed(42)
+    syn = pd.DataFrame({
+        'speed': np.random.uniform(8, 20, n),
+        'accel': np.random.uniform(0, 0.5, n),
+        'decel': np.random.uniform(3, 8, n),
+        'yaw_rate': np.random.uniform(-0.1, 0.1, n),
+        'num_targets': np.random.randint(1, 4, n),
+        'signals': 0,
+        'max_gap': np.random.uniform(0.1, 0.8, n),
+        'rel_speed': np.random.uniform(5, 15, n),
+        'max_plr': np.random.uniform(0, 0.15, n),
+        'k_lost_max': np.random.randint(0, 2, n),
+        'cri_left': np.random.uniform(0.82, 0.98, n),
+        'cri_right': 0.0,
+        'scenario_type': np.random.choice(['TSV', 'HNR', 'normal'], n)
+    })
+    # Basic derived features
+    syn['speed_kmh'] = syn['speed'] * 3.6
+    syn['abs_accel'] = syn['accel']
+    syn['abs_net_accel'] = np.abs(syn['accel'] - syn['decel'])
+    syn['abs_yaw_rate'] = np.abs(syn['yaw_rate'])
+    syn['is_braking'] = 1
+    syn['is_signaling'] = 0
+    syn['has_targets'] = 1
+    syn['speed_category'] = 1
+    syn['closing_speed'] = syn['rel_speed']
+    syn['target_angle'] = 0.0
+    syn['brake_ratio'] = syn['decel'] / np.maximum(syn['speed'], 0.1)
+    syn['scenario_tsv'] = (syn['scenario_type'] == 'TSV').astype(int)
+    syn['scenario_hnr'] = (syn['scenario_type'] == 'HNR').astype(int)
+    return syn
 
 
 
@@ -103,9 +153,9 @@ def create_target_labels(df: pd.DataFrame):
     labels = pd.Series(0, index=df.index)
     
     # Use the maximum CRI from either side logged by the simulation
-    # If one side is missing (NaN), treat it as 0
-    c_l = df.get('cri_left', 0.0).fillna(0.0)
-    c_r = df.get('cri_right', 0.0).fillna(0.0)
+    # If column is missing or has NaN, treat as 0
+    c_l = df['cri_left'].fillna(0.0) if 'cri_left' in df.columns else pd.Series(0.0, index=df.index)
+    c_r = df['cri_right'].fillna(0.0) if 'cri_right' in df.columns else pd.Series(0.0, index=df.index)
     c = np.maximum(c_l, c_r)
     
     # Standard BSD Thresholds
@@ -147,6 +197,11 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
     # ── Feature Engineering ──
     print("\n🔧 Engineering features...")
     df = add_derived_features(df)
+    
+    # Inject synthetic critical scenarios
+    syn_df = generate_critical_scenarios(n=300)
+    df = pd.concat([df, syn_df], ignore_index=True)
+    
     y_raw = create_target_labels(df)
     
     all_features = FEATURE_COLS + DERIVED_FEATURES
@@ -167,33 +222,27 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
         X, y, test_size=0.25, random_state=42, stratify=y
     )
     
-    # ── Synthetic Class Injection ──
-    # Guarantee all 4 classes are present so num_class=4 works correctly
-    present_classes = y_train_raw.unique()
-    missing_classes = [c for c in [0, 1, 2, 3] if c not in present_classes]
-    if missing_classes:
-        print(f"\n💉 Injecting synthetic samples for missing classes: {missing_classes}")
-        synthetic_X = []
-        synthetic_y = []
-        dummy_row = X_train_raw.iloc[-1].copy()
-        for c in missing_classes:
-            synthetic_X.append(dummy_row)
-            synthetic_y.append(c)
-        X_train_raw = pd.concat([X_train_raw, pd.DataFrame(synthetic_X, columns=X_train_raw.columns)], ignore_index=True)
-        y_train_raw = pd.concat([y_train_raw, pd.Series(synthetic_y)], ignore_index=True)
-
-    # ── Compute Sample Weights ──
-    print("\n⚖️  Computing sample weights...")
-    class_weights = get_class_weights(y_train_raw)
-    sample_weights = y_train_raw.map(class_weights).fillna(1.0)
+    # ── SMOTE Oversampling ──
+    print("\n⚖️  Applying SMOTE for rare classes...")
+    from imblearn.over_sampling import SMOTE
+    # Handle classes dynamically based on what's present but heavily oversample 1, 2, 3
+    strat = {}
+    total_train = len(y_train_raw)
+    counts = y_train_raw.value_counts().to_dict()
+    strat[1] = max(counts.get(1, 0), 3000)
+    strat[2] = max(counts.get(2, 0), 2000)
+    strat[3] = max(counts.get(3, 0), 500)
     
-    X_train = X_train_raw
-    y_train = y_train_raw
+    smote = SMOTE(sampling_strategy=strat, random_state=42)
+    X_train, y_train = smote.fit_resample(X_train_raw, y_train_raw)
+
+    print("\n⚖️  Computing sample weights...")
+    class_weights = get_class_weights(y_train)
+    sample_weights = y_train.map(class_weights).fillna(1.0)
     
     print(f"   Train size: {len(X_train)}")
     print(f"   Test size: {len(X_test)} (Unbalanced true chronological)")
     
-    # ── Train XGBoost ──
     print("\n🚀 Training XGBoost classifier...")
     model = xgb.XGBClassifier(
         n_estimators=200,
@@ -208,8 +257,7 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
         objective='multi:softprob',
         num_class=4,
         eval_metric='mlogloss',
-        random_state=42,
-        use_label_encoder=False,
+        random_state=42
     )
     
     model.fit(
@@ -256,15 +304,23 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
     
     # Feature importance
     print("\n📈 Feature Importance:")
-    importances = dict(zip(available_features, model.feature_importances_))
+    
+    # Use gain metric to match figure generation
+    booster = model.get_booster()
+    gain_dict = booster.get_score(importance_type='gain')
+    total_gain = sum(gain_dict.values())
+    if total_gain > 0:
+        importances = {f: (gain_dict.get(f, 0.0) / total_gain) for f in available_features}
+    else:
+        importances = dict(zip(available_features, model.feature_importances_))
+        
     sorted_imp = sorted(importances.items(), key=lambda x: x[1], reverse=True)
     for feat, imp in sorted_imp:
         bar = '█' * int(imp * 50)
         print(f"   {feat:20s} {imp:.4f} {bar}")
         
     import pathlib
-    imp_records = sorted(zip(available_features, model.feature_importances_),
-                         key=lambda x: x[1], reverse=True)
+    imp_records = sorted_imp
     imp_df = pd.DataFrame(imp_records, columns=['feature', 'importance'])
     imp_path = pathlib.Path(__file__).parent.parent / 'Outputs' / 'feature_importance.csv'
     imp_path.parent.mkdir(parents=True, exist_ok=True)
@@ -326,12 +382,13 @@ class BSDPredictor:
         except Exception as e:
             print(f"⚠️  Failed to load AI model: {e}")
     
-    def predict(self, speed: float, accel: float, yaw_rate: float,
-                num_targets: int, max_gap: float, rel_speed: float,
-                max_plr: float, k_lost_max: int, signals: int,
+    def predict(self, speed: float, accel: float, decel: float = 0.0,
+                num_targets: int = 0, max_gap: float = 100.0, rel_speed: float = 0.0,
+                max_plr: float = 0.0, k_lost_max: int = 0,
+                yaw_rate: float = 0.0, signals: int = 0,
                 target_angle: float = 0.0) -> dict:
         """
-        Predict alert level from vehicle telemetry.
+        Predict alert level from vehicle telemetry (5-field BSM compatible).
         
         Returns:
             dict with 'ai_alert' (str), 'ai_confidence' (float), 'ai_probs' (list)
@@ -339,8 +396,10 @@ class BSDPredictor:
         if self.model is None:
             return {'ai_alert': 'N/A', 'ai_confidence': 0.0, 'ai_probs': []}
         
+        net_accel = accel - decel
         row = {
-            'speed': speed, 'accel': accel, 'yaw_rate': yaw_rate,
+            'speed': speed, 'accel': accel, 'decel': decel,
+            'yaw_rate': yaw_rate,
             'num_targets': num_targets,
             'signals': signals,
             'max_gap': max_gap,
@@ -348,17 +407,20 @@ class BSDPredictor:
             'max_plr': max_plr,
             'k_lost_max': k_lost_max,
             'speed_kmh': speed * 3.6,
-            'abs_accel': abs(accel),
+            'abs_accel': abs(net_accel),
             'abs_yaw_rate': abs(yaw_rate),
-            'is_braking': 1 if accel < -1.0 else 0,
-            'is_signaling': 1 if signals > 0 else 0,
+            'is_braking': 1 if decel > 1.0 else 0,
+            'is_signaling': 0,  # Not available in 5-field BSM
             'has_targets': 1 if num_targets > 0 else 0,
             'speed_category': 0 if speed < 5 else (1 if speed < 20 else 2),
             'closing_speed': rel_speed,
             'target_angle': target_angle,
+            'brake_ratio': decel / max(speed, 0.1),
+            'abs_net_accel': abs(net_accel),
+            'scenario_tsv': 0,
+            'scenario_hnr': 0,
         }
         
-        # Select features in correct order
         X = pd.DataFrame([{f: row.get(f, 0) for f in self.features}])
         
         try:
@@ -399,17 +461,21 @@ class BSDPredictor:
             for r in feature_rows:
                 s = r.get('speed', 0.0)
                 a = r.get('accel', 0.0)
+                d = r.get('decel', 0.0)
+                net_a = a - d
                 processed_row = r.copy()
                 processed_row.update({
                     'speed_kmh': s * 3.6,
-                    'abs_accel': abs(a),
-                    'abs_yaw_rate': abs(r.get('yaw_rate', 0.0)),
-                    'is_braking': 1 if a < -1.0 else 0,
-                    'is_signaling': 1 if r.get('signals', 0) > 0 else 0,
+                    'abs_accel': abs(net_a),
+                    'is_braking': 1 if d > 1.0 else 0,
                     'has_targets': 1 if r.get('num_targets', 0) > 0 else 0,
                     'speed_category': 0 if s < 5 else (1 if s < 20 else 2),
                     'closing_speed': r.get('rel_speed', 0.0),
-                    'target_angle': r.get('target_angle', 0.0)
+                    'target_angle': r.get('target_angle', 0.0),
+                    'brake_ratio': d / max(s, 0.1),
+                    'abs_net_accel': abs(net_a),
+                    'scenario_tsv': r.get('scenario_tsv', 0),
+                    'scenario_hnr': r.get('scenario_hnr', 0),
                 })
                 processed_rows.append({f: processed_row.get(f, 0) for f in self.features})
             

@@ -70,5 +70,19 @@ def main():
     plt.savefig('../Outputs/roc_curve.png')
     print("Saved ROC curve to ../Outputs/roc_curve.png")
 
+    # ── Per-Scenario AUC Breakdown ──
+    if 'scenario_type' in df.columns:
+        print("\n--- Per-Scenario AUC Breakdown ---")
+        for sc in df['scenario_type'].dropna().unique():
+            sc_mask = df['scenario_type'] == sc
+            sc_y = y_true[sc_mask]
+            if sc_y.sum() == 0 or len(sc_y) < 10:
+                print(f"  {sc}: Insufficient positive events (skipped)")
+                continue
+            sc_cri = math_cri[sc_mask]
+            fpr_sc, tpr_sc, _ = roc_curve(sc_y, sc_cri)
+            auc_sc = auc(fpr_sc, tpr_sc)
+            print(f"  {sc}: AUC = {auc_sc:.4f} (n={len(sc_y)}, positive={sc_y.sum()})")
+
 if __name__ == '__main__':
     main()

@@ -1,0 +1,16 @@
+<routes>
+    <vType id="passenger" minGap="2.5" accel="2.0" decel="4.5" maxSpeed="15.0" color="0,255,255" sigma="0.5"/>
+    <vType id="aggressive" minGap="1.0" accel="3.0" decel="5.0" maxSpeed="20.0" color="255,100,0" sigma="0.2"/>
+    <vType id="truck" minGap="3.0" accel="1.0" decel="3.0" maxSpeed="10.0" color="200,200,200" length="12.0"/>
+
+    <flow id="f1" type="passenger" from="A0B0" to="E4D4" begin="0" end="360" probability="0.3"/>
+    <flow id="f2" type="aggressive" from="E4D4" to="A0B0" begin="0" end="360" probability="0.3"/>
+    <flow id="f3" type="passenger" from="A4B4" to="E0D0" begin="0" end="360" probability="0.3"/>
+    <flow id="f4" type="aggressive" from="E0D0" to="A4B4" begin="0" end="360" probability="0.3"/>
+    <flow id="f5" type="truck" from="A0A1" to="A4B4" begin="0" end="360" probability="0.1"/>
+    <flow id="f6" type="truck" from="E4E3" to="E0D0" begin="0" end="360" probability="0.1"/>
+    
+    <!-- Omni-directional crossing -->
+    <flow id="f7" type="passenger" from="B0C0" to="D4C4" begin="0" end="360" probability="0.2"/>
+    <flow id="f8" type="passenger" from="D0C0" to="B4C4" begin="0" end="360" probability="0.2"/>
+</routes>
