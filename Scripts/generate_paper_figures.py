@@ -207,6 +207,61 @@ def fig_scenario_comparison(df):
     print(f'✅ Saved: {path}')
 
 
+# ── Figure 7: Confusion Matrix ───────────────────────────────────────────────
+def fig_confusion_matrix(df):
+    from sklearn.metrics import confusion_matrix
+    import seaborn as sns
+
+    if 'ai_critical_prob' not in df.columns:
+        print('⚠️  ai_critical_prob missing from bsd_metrics.csv — skipping confusion matrix'); return
+
+    # We evaluate AI thresholding to max class
+    # The true states:
+    y_true = compute_ground_truth(df)
+
+    # Simplified confusion logic matching the CRITICAL intent
+    # y_pred_class is 0,1,2,3 from the report map: SAFE=0, CAUTION=1, WARNING=2, CRITICAL=3
+    # Actually, we can just use y_true and the math model for now:
+    y_pred = (df[['cri_left', 'cri_right']].max(axis=1) >= Params.THETA_3).astype(int)
+    cm = confusion_matrix(y_true, y_pred)
+    
+    fig, ax = plt.subplots(figsize=(5, 4))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False, ax=ax,
+                xticklabels=['Negative', 'Positive'], yticklabels=['Negative', 'Positive'])
+    ax.set(xlabel='Predicted Label (CRI ≥ 0.80)', ylabel='True Label (Proxy)',
+           title='Physics Engine Confusion Matrix (CRITICAL)')
+    path = FIG_DIR / 'fig7_confusion_matrix.png'
+    fig.savefig(path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print(f'✅ Saved: {path}')
+
+# ── Figure 8: Sensitivity Analysis ─────────────────────────────────────────
+def fig_sensitivity_analysis():
+    try:
+        df_sens = pd.read_csv('../Outputs/sensitivity_results.csv')
+    except Exception:
+        try:
+            df_sens = pd.read_csv('sensitivity_results.csv')
+        except Exception:
+            print('⚠️  sensitivity_results.csv not found. Run sensitivity_analysis.py first.'); return
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    axes = axes.flatten()
+    params_to_plot = ['SIGMA_GPS', 'PLR', 'TTC_CRIT', 'MU']
+    
+    for ax, p in zip(axes, params_to_plot):
+        sub_df = df_sens[df_sens['Parameter'] == p]
+        if sub_df.empty: continue
+        ax.plot(sub_df['Value'], sub_df['F1'], marker='o', lw=2, color=COLORS['math'])
+        ax.set(title=f'Sensitivity to {p}', xlabel=p, ylabel='F1 Score (CRITICAL)')
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+    fig.tight_layout()
+    path = FIG_DIR / 'fig8_sensitivity_analysis.png'
+    fig.savefig(path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print(f'✅ Saved: {path}')
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     print(f'Generating paper figures → {FIG_DIR}')
@@ -223,6 +278,8 @@ def main():
     fig_alert_timeline(df)
     fig_risk_components(df)
     fig_scenario_comparison(df)
+    fig_confusion_matrix(df)
+    fig_sensitivity_analysis()
 
     print(f'\n✅ All figures saved to {FIG_DIR}')
     print('   fig1_roc_curve.png              — ROC comparison')
@@ -231,6 +288,8 @@ def main():
     print('   fig4_alert_timeline.png         — Alert level evolution')
     print('   fig5_risk_components.png        — Risk component distributions')
     print('   fig6_scenario_comparison.png    — Scenario CRI timeseries')
+    print('   fig7_confusion_matrix.png       — Confusion Matrix')
+    print('   fig8_sensitivity_analysis.png   — Sensitivity Analysis grids')
 
 
 if __name__ == '__main__':

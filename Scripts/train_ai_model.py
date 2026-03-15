@@ -297,10 +297,35 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
     else:
         print("\n⚠️  No CRITICAL class samples in test set — run longer simulation first.")
     
-    # Cross-validation
-    print("   Note: K-Fold cross-validation is disabled for chronological data.")
-    cv_scores = np.array([model.score(X_test, y_test)])
-    print(f"   Holdout Test Accuracy: {cv_scores.mean():.4f}")
+    # ── Cross-Validation (TimeSeriesSplit) ──
+    print("\n🔄 Running 5-fold TimeSeriesSplit cross-validation...")
+    from sklearn.model_selection import TimeSeriesSplit
+    from sklearn.metrics import accuracy_score, recall_score as rs, f1_score as f1s
+    tscv = TimeSeriesSplit(n_splits=5)
+    cv_accuracies, cv_crit_recalls, cv_f1_weighted = [], [], []
+    # Run CV on the original (non-SMOTE) data to get unbiased estimates
+    for fold_i, (train_idx, val_idx) in enumerate(tscv.split(X_train_raw)):
+        X_cv_train, X_cv_val = X_train_raw.iloc[train_idx], X_train_raw.iloc[val_idx]
+        y_cv_train, y_cv_val = y_train_raw.iloc[train_idx], y_train_raw.iloc[val_idx]
+        cv_model = xgb.XGBClassifier(
+            n_estimators=200, max_depth=6, learning_rate=0.1,
+            objective='multi:softprob', num_class=4, eval_metric='mlogloss',
+            random_state=42, verbosity=0
+        )
+        cv_model.fit(X_cv_train, y_cv_train, verbose=False)
+        y_cv_pred = cv_model.predict(X_cv_val)
+        cv_accuracies.append(accuracy_score(y_cv_val, y_cv_pred))
+        cv_crit_recalls.append(rs(y_cv_val, y_cv_pred, labels=[3], average='micro', zero_division=0))
+        cv_f1_weighted.append(f1s(y_cv_val, y_cv_pred, average='weighted', zero_division=0))
+    cv_acc_arr = np.array(cv_accuracies)
+    cv_cr_arr = np.array(cv_crit_recalls)
+    cv_f1_arr = np.array(cv_f1_weighted)
+    print(f"   CV Accuracy:       {cv_acc_arr.mean():.4f} ± {cv_acc_arr.std():.4f}")
+    print(f"   CV CRITICAL Recall: {cv_cr_arr.mean():.4f} ± {cv_cr_arr.std():.4f}")
+    print(f"   CV F1 (weighted):  {cv_f1_arr.mean():.4f} ± {cv_f1_arr.std():.4f}")
+    # Holdout accuracy (primary model trained with SMOTE)
+    holdout_acc = model.score(X_test, y_test)
+    print(f"   Holdout Test Accuracy: {holdout_acc:.4f}")
     
     # Feature importance
     print("\n📈 Feature Importance:")
@@ -336,8 +361,15 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
     model_info = {
         'features': available_features,
         'label_map': label_names,
-        'accuracy': float(cv_scores.mean()),
-        'cv_std': float(cv_scores.std()),
+        'accuracy': float(holdout_acc),
+        'cv_folds': 5,
+        'cv_type': 'TimeSeriesSplit',
+        'cv_accuracy_mean': float(cv_acc_arr.mean()),
+        'cv_accuracy_std': float(cv_acc_arr.std()),
+        'cv_critical_recall_mean': float(cv_cr_arr.mean()),
+        'cv_critical_recall_std': float(cv_cr_arr.std()),
+        'cv_f1_weighted_mean': float(cv_f1_arr.mean()),
+        'cv_f1_weighted_std': float(cv_f1_arr.std()),
         'n_training_samples': len(X_train),
         'n_classes': len(y_train_raw.unique()),
         'feature_importance': {k: float(v) for k, v in importances.items()},
@@ -351,7 +383,9 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
     
     print("\n" + "=" * 70)
     print(f"✅ AI Model Training Complete!")
-    print(f"   Accuracy: {cv_scores.mean():.2%} ± {cv_scores.std():.2%}")
+    print(f"   Holdout Accuracy:  {holdout_acc:.2%}")
+    print(f"   CV Accuracy:       {cv_acc_arr.mean():.2%} ± {cv_acc_arr.std():.2%}")
+    print(f"   CV CRITICAL Recall: {cv_cr_arr.mean():.2%} ± {cv_cr_arr.std():.2%}")
     print(f"   Classes: {list(label_names.values())}")
     print("=" * 70)
     

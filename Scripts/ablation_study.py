@@ -47,8 +47,12 @@ def main():
     parser.add_argument("--quick", action="store_true", help="Run quick test mode")
     args = parser.parse_args()
 
-    steps = 300 if args.quick else 400
-    seeds = [42] if args.quick else [42, 43, 44]
+    steps = 300 if args.quick else 3600
+    seeds = [42] if args.quick else [42, 43, 44, 45, 46]
+    
+    if args.quick:
+        print("⚠️  WARNING: Quick mode (300 steps, 1 seed) produces statistically unreliable F1 scores.")
+        print("   For paper submission, run without --quick flag (3600 steps, 5 seeds, ~30 min).\n")
     
     print(f"Running Ablation Study (N={len(seeds)} seeds, steps={steps})...")
     

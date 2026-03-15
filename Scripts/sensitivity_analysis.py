@@ -52,9 +52,14 @@ def main():
             results.append({'Parameter': param, 'Value': val, 'F1': f})
             print(f"  {param}={val} -> F1: {f:.3f}")
 
-    print("\n=== Sensitivity Results ===")
-    import pprint
-    pprint.pprint(results)
+    df_res = pd.DataFrame(results)
+    out_path = '../Outputs/sensitivity_results.csv'
+    try:
+        df_res.to_csv(out_path, index=False)
+        print(f"\n✅ Sensitivity results saved to {out_path}")
+    except FileNotFoundError:
+        df_res.to_csv('sensitivity_results.csv', index=False)
+        print(f"\n✅ Sensitivity results saved to sensitivity_results.csv")
 
 if __name__ == '__main__':
     main()

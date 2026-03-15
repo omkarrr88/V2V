@@ -1,3 +1,10 @@
+class Config:
+    GUI_UPDATE_INTERVAL = 5
+    LIVE_UPDATE_INTERVAL = 25
+    STALE_CLEANUP_INTERVAL = 50
+    LOG_INTERVAL = 100
+    FILE_WRITE_INTERVAL = 500
+
 """
 V2V Blind Spot Detection — SUMO Simulation Runner (V3.0 5-Field BSM)
 =====================================================================
@@ -625,13 +632,13 @@ def main():
             al = result['alert_left']
             ar = result['alert_right']
             
-            if use_gui and (step % 5 == 0):
+            if use_gui and (step % Config.GUI_UPDATE_INTERVAL == 0):
                 key = f"{al}_{ar}"
                 if last_colors.get(ego_vid) != key:
                     try:
                         traci.vehicle.setColor(ego_vid, alert_color(al, ar))
                         last_colors[ego_vid] = key
-                    except:
+                    except Exception:
                         pass
 
             if al == 'SAFE' and ar == 'SAFE':
@@ -801,7 +808,7 @@ def main():
         live['params'] = {'ALPHA': Params.ALPHA, 'BETA': Params.BETA,
                           'GAMMA': Params.GAMMA, 'THETA_3': Params.THETA_3}
         
-        if step % 25 == 0:
+        if step % Config.LIVE_UPDATE_INTERVAL == 0:
             try:
                 _tmp = LIVE_FILE + '.tmp'
                 with open(_tmp, 'w') as f:
@@ -810,17 +817,17 @@ def main():
             except Exception:
                 pass
 
-        if step % 500 == 0 and step > 0:
+        if step % Config.FILE_WRITE_INTERVAL == 0 and step > 0:
             if metrics_log:
                 pd.DataFrame(metrics_log).to_csv(METRICS_FILE, index=False)
             if alerts_log:
                 pd.DataFrame(alerts_log).to_csv(ALERTS_FILE, index=False)
 
-        if step % 50 == 0 and step > 0:
+        if step % Config.STALE_CLEANUP_INTERVAL == 0 and step > 0:
             for eng in engines.values():
                 eng.cleanup_stale_trackers(max_stale_steps=15)
 
-        if step % 100 == 0:
+        if step % Config.LOG_INTERVAL == 0:
             elapsed = float(time.time() - t0)
             eta = float((elapsed / max(step, 1)) * (max_steps - step))
             alerted = step_caution + step_warning + step_critical
@@ -874,3 +881,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

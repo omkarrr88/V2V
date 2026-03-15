@@ -185,15 +185,22 @@ Good question! The "Intent" test only reads YOUR blinkers. But in our **V3.3 Upg
 ---
 
 ## 6. The Final Danger Score (Collision Risk Index — CRI)
+
 After doing hundreds of calculations in a split second, the Brain multiplies everything together **for each car near you**, and then sorts the results by side (left/right):
 
-$$CRI = \underbrace{P(\text{car in zone})}_{\text{Is it there?}} \times \underbrace{\max(R_{decel},\; R_{ttc})}_{\text{Physics Risk}} \times \underbrace{\left(0.15 \cdot R_{decel} + 0.80 \cdot R_{ttc} + 0.05 \cdot R_{intent}\right)}_{\text{Combined Weighted Risk}} \times \underbrace{(1 + 0.30 \cdot PLR)}_{\text{Can I trust the data?}}$$
+$$ \text{CRI} = \text{clip} \left( P_{gps} \cdot \max(R_{decel}, R_{ttc}) \cdot [\alpha R_{decel} + \beta R_{ttc} + \gamma R_{intent}] \cdot \Gamma_{plr}, \ 0, \ 1 \right) $$
+
+where:
+*   $\alpha = 0.20$ (Deceleration Risk Weight)
+*   $\beta = 0.80$ (TTC Risk Weight)
+*   $\gamma = 0.00$ (Intent Risk Weight — disabled in 5-field BSM)
+*   $\Gamma_{plr} = 1 + 0.30 \cdot \text{PLR}_{window}$ (Network Degradation Multiplier)
 
 ### The Weights Explained (Optimized via AI Grid Search!):
-*   **Deceleration risk ($\alpha = 0.15$)**: Important, but side-swipes are more common in blind spots than rear-ends.
+*   **Deceleration risk ($\alpha = 0.20$)**: Important, but side-swipes are more common in blind spots than rear-ends.
 *   **TTC risk ($\beta = 0.80$)**: The massive heavyweight! Closing time (both forward AND sideways) is the ultimate predictor of a crash.
-*   **Intent risk ($\gamma = 0.05$)**: It amplifies the danger if you are actively turning, but the physics (TTC/Decel) do the heavy lifting to keep you safe regardless of your blinkers.
-*   **The PLR multiplier ($\epsilon = 0.30$)**: Slightly boosts the danger score when walkie-talkie messages are getting lost. If 100% of messages are lost, the risk goes up by 30% — acknowledging uncertainty without panicking.
+*   **Intent risk ($\gamma = 0.00$)**: In the current 5-field BSM implementation, predicting intent from lateral drift without turn signals is unreliable, so this weight is set to zero to avoid noise.
+*   **The PLR multiplier ($\epsilon = 0.30$)**: Slightly boosts the danger score when messages are getting lost, acknowledging uncertainty without panicking.
 
 The final score is always clamped between $0.0$ and $1.0$.
 

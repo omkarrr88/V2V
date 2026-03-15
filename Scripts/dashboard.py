@@ -146,7 +146,7 @@ def load_live_data():
             data = json.load(f)
             if data: st.session_state.last_good_data = data
             return data
-    except: 
+    except Exception: 
         return st.session_state.get('last_good_data')
 
 @st.cache_data(ttl=2)
@@ -155,7 +155,7 @@ def load_alerts_history():
     try:
         df = pd.read_csv("../Outputs/bsd_alerts.csv")
         return df.sort_values('step', ascending=False).head(50)
-    except: return pd.DataFrame()
+    except Exception: return pd.DataFrame()
 
 @st.cache_data(ttl=5)
 def load_metrics_df():

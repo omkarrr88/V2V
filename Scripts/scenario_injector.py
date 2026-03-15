@@ -26,7 +26,8 @@ def _safe_add_vehicle(traci, vid: str, route_id: str, edge: str, lane: int,
     try:
         try:
             traci.route.add(route_id, [edge])
-        except: pass
+        except Exception:
+            pass  # Route may already exist — expected
         
         traci.vehicle.add(vid, route_id, departLane=str(lane), 
                          departPos=str(max(0, pos)), departSpeed=str(max(1, speed)),
@@ -34,7 +35,11 @@ def _safe_add_vehicle(traci, vid: str, route_id: str, edge: str, lane: int,
         traci.vehicle.setSpeedMode(vid, 0)
         traci.vehicle.setLaneChangeMode(vid, 0)
         return True
-    except: return False
+    except Exception as e:
+        # TraCI calls can legitimately fail when vehicles depart mid-step
+        if not any(s in str(e) for s in ['Vehicle', 'not found', 'departed', 'already exists']):
+            print(f"[WARN] Scenario injector: {type(e).__name__}: {e}")
+        return False
 
 def _get_random_multilane_edge(net) -> Tuple[str, int]:
     edges = [e for e in net.getEdges() if e.getLaneNumber() >= 2 and e.getLength() > 100]
@@ -110,7 +115,7 @@ def force_vehicle_interactions(step: int, net, traci):
                 curr = traci.vehicle.getLaneIndex(lucky_vid)
                 target = 1 - curr if nlanes == 2 else np.random.choice([l for l in range(nlanes) if l != curr])
                 traci.vehicle.changeLane(lucky_vid, target, 2.0)
-        except: pass
+        except Exception: pass
 
 
 # ============================================================

@@ -1,15 +1,25 @@
+"""
+optimize_weights.py — CRI Weight Optimization via Grid Search
+==============================================================
+Finds optimal α, β, γ weights for the CRI formula by grid search
+over existing bsd_metrics.csv data.
+
+Outputs the best weights to console. The author must manually update
+Params.ALPHA, Params.BETA, Params.GAMMA in bsd_engine.py — this script
+does NOT auto-modify source code (unlike the previous regex-based approach).
+
+Usage: python optimize_weights.py
+"""
 import pandas as pd
 import numpy as np
 from sklearn.metrics import f1_score
 from bsd_engine import Params
 
-# Removed unused compute_cri hook
-
 def main():
     print("Loading bsd_metrics.csv...")
     try:
         df = pd.read_csv('../Outputs/bsd_metrics.csv')
-    except Exception as e:
+    except FileNotFoundError:
         df = pd.read_csv('bsd_metrics.csv')
         
     from bsd_utils import compute_ground_truth, check_coverage
@@ -22,7 +32,7 @@ def main():
 
     best_f1, best_weights = 0, None
 
-    print(f"Total rows: {len(df)}, Collisions: {y_true.sum()}")
+    print(f"Total rows: {len(df)}, Positive events: {y_true.sum()}")
     print("Starting Grid Search...")
     for alpha in np.arange(0.1, 0.81, 0.05):
         for beta in np.arange(0.1, 0.81, 0.05):
@@ -45,17 +55,13 @@ def main():
     if best_weights:
         a_opt, b_opt, g_opt = best_weights
         print(f"\n✅ Optimal weights: α={a_opt:.2f}, β={b_opt:.2f}, γ={g_opt:.2f}, F1={best_f1:.4f}")
-
-        # Auto-write weights back to bsd_engine.py Params class
-        import re, pathlib
-        engine_path = pathlib.Path(__file__).parent / 'bsd_engine.py'
-        src = engine_path.read_text()
-        src = re.sub(r'(ALPHA\s*=\s*)[\d.]+', f'ALPHA       = {a_opt:.2f}', src)
-        src = re.sub(r'(BETA\s*=\s*)[\d.]+',  f'BETA        = {b_opt:.2f}', src)
-        src = re.sub(r'(GAMMA\s*=\s*)[\d.]+', f'GAMMA       = {g_opt:.2f}', src)
-        engine_path.write_text(src)
-        print(f"   ✅ Weights written back to bsd_engine.py automatically.")
-        print(f"   Re-run the simulation to regenerate CSV with updated weights.")
+        print(f"\n   To apply, update bsd_engine.py Params class manually:")
+        print(f"     ALPHA       = {a_opt:.2f}")
+        print(f"     BETA        = {b_opt:.2f}")
+        print(f"     GAMMA       = {g_opt:.2f}")
+        print(f"\n   Then re-run the simulation to regenerate CSV with updated weights.")
+    else:
+        print("No improvement found over current weights.")
 
 if __name__ == '__main__':
     main()

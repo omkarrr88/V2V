@@ -337,4 +337,76 @@ for a, d in [(3.0, 0.0), (0.0, 4.5), (2.0, 1.0), (0.0, 0.0)]:
     assert s.net_accel == a - d, f"net_accel mismatch: {s.net_accel} != {a-d}"
 print("✅ 5-field BSM net_accel consistency verified!")
 
+# ==============================================================================
+# LATENCY BENCHMARK
+# ==============================================================================
+print("\n=== LATENCY BENCHMARK ===")
+import time
+bench_engine = BSDEngine()
+# Create realistic scenario: ego with 15 targets
+bench_ego = VehicleState('ego_bench', 500, 500, 15.0, 1.0, 0.0, 0.1, 0.01, 1.0, 4.5, 1.8, 1500, 0.7, 'sedan', 0)
+bench_targets = {}
+bench_received = set()
+for i in range(15):
+    vid = f'tgt_{i}'
+    offset_x = 2.0 + (i % 3) * 3.5
+    offset_y = -10.0 + i * 5.0
+    ts = VehicleState(vid, 500 + offset_x, 500 + offset_y, 12.0 + i*0.5,
+                      0.5, 0.3, 0.1 + i*0.01, 0.005, 0.2, 4.5, 1.8, 1500, 0.7, 'sedan', 0)
+    bench_targets[vid] = ts
+    bench_received.add(vid)
+
+N_BENCH = 1000
+times_ms = []
+for _ in range(N_BENCH):
+    t0 = time.perf_counter()
+    bench_engine.process_step(bench_ego, bench_targets, bench_received)
+    times_ms.append((time.perf_counter() - t0) * 1000)
+
+times_arr = np.array(times_ms)
+mean_ms = np.mean(times_arr)
+p95_ms = np.percentile(times_arr, 95)
+p99_ms = np.percentile(times_arr, 99)
+print(f"process_step() with 15 targets ({N_BENCH} iterations):")
+print(f"  Mean: {mean_ms:.3f} ms")
+print(f"  P95:  {p95_ms:.3f} ms")
+print(f"  P99:  {p99_ms:.3f} ms")
+sae_pass = p99_ms < 100
+print(f"  SAE J2945/1 100ms budget: {'PASS ✅' if sae_pass else 'FAIL ❌'}")
+assert sae_pass, f"P99 latency {p99_ms:.1f}ms exceeds 100ms SAE budget"
+
+# ==============================================================================
+# WGS84 CONVERTER TEST
+# ==============================================================================
+print("\n=== WGS84 CONVERTER TEST ===")
+try:
+    sys.path.insert(0, os.path.dirname(__file__) if '__file__' in dir() else '.')
+    from ros2_wgs84_wrapper import WGS84Converter
+
+    # Atal Bridge approximate reference (Pune, India)
+    converter = WGS84Converter(lat0=18.519, lon0=73.854)
+
+    # Test 1: Reference point maps to (0, 0)
+    x0, y0 = converter.to_local(18.519, 73.854)
+    assert abs(x0) < 0.1 and abs(y0) < 0.1, f"Origin should be (0,0), got ({x0:.3f}, {y0:.3f})"
+    print(f"  Origin test: ({x0:.4f}, {y0:.4f}) ✓")
+
+    # Test 2: ~100m north offset
+    x_n, y_n = converter.to_local(18.519 + 0.0009, 73.854)
+    assert 95 < y_n < 105, f"100m north offset wrong: {y_n:.1f}m"
+    print(f"  100m north: y={y_n:.1f}m ✓")
+
+    # Test 3: Round-trip conversion
+    test_lat, test_lon = 18.520, 73.856
+    x_rt, y_rt = converter.to_local(test_lat, test_lon)
+    lat_back, lon_back = converter.to_wgs84(x_rt, y_rt)
+    assert abs(lat_back - test_lat) < 0.0001 and abs(lon_back - test_lon) < 0.0001, \
+        f"Round-trip failed: ({test_lat},{test_lon}) -> ({lat_back:.6f},{lon_back:.6f})"
+    print(f"  Round-trip: error = ({abs(lat_back-test_lat)*111000:.2f}m, {abs(lon_back-test_lon)*111000:.2f}m) ✓")
+
+    print("✅ WGS84Converter tests passed!")
+except ImportError:
+    print("⚠️  ros2_wgs84_wrapper not importable — skipping WGS84 test")
+
 print("\n✅✅✅ ALL V3.0 TESTS PASSED — BSD Engine (5-field BSM) is complete and correct! ✅✅✅")
+

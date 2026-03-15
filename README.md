@@ -2,7 +2,7 @@
 ### *Predictive Physics-Based Collision Risk Analytics with AI-Hybrid Validation*
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-yellow.svg)](https://www.python.org/)
-[![Simulator SUMO](https://img.shields.io/badge/Simulator-SUMO 1.19+-blue.svg)](https://sumo.dlr.de/docs/index.html)
+[![Simulator SUMO](https://img.shields.io/badge/Simulator-SUMO1.19+-blue.svg)](https://sumo.dlr.de/docs/index.html)
 [![Model Version](https://img.shields.io/badge/Math_Model-V3.0-green.svg)](Mathematical_Model_V2V_BSD.md)
 [![Status](https://img.shields.io/badge/Status-Research_Ready-brightgreen.svg)]()
 
@@ -216,11 +216,11 @@ Performance parameters exactly match identical bounding variables evaluated acro
 | Simulation Rows | 146,051 |
 | Unique Target Vehicles | 623 |
 | Event Warning Totals | 5,027 |
-| Validated Math Model AUC | 0.9875 |
-| Independent AI Hybrid AUC | 0.8160 |
-| AI Hybrid Accuracy | 86.56% |
-| XGBoost CRITICAL Recall Rate | 80.7% |
-| Ground Truth Positive Events | 3,310 |
+| Validated Math Model AUC | 0.9874 |
+| Independent AI Hybrid AUC | 0.8191 |
+| AI Hybrid Accuracy | 86.48% |
+| XGBoost CRITICAL Recall Rate | 81.8% |
+| Ground Truth Positive Events | 3,314 |
 | Mathematical Positive Ground Truth Frequency | 2.27% |
 | Normal Scenario Row Division | 72,494 |
 | HNR Scenario Row Division | 45,311 |
@@ -232,22 +232,22 @@ Performance parameters exactly match identical bounding variables evaluated acro
 
 ## 🔥 Real-World Deployment
 
-System execution directly transfers structurally compliant limits spanning completely external hardware bounds parsing standard physical variables projecting generic target mapping architectures exactly reading native parameters checking functional interfaces isolating continuous structures mapping standard limits checking native configurations.
+System execution transfers directly to standard external hardware by relying entirely on native physical variables instead of deeply integrated proprietary CAN-bus signals.
 
-Integrating hardware targets utilizing identical standard processing protocols ensures simple low-level device implementations spanning exact execution capabilities reading native signals projecting optimal functionality. The integrated `ros2_wgs84_wrapper.py` script accepts native `{lat, lon, speed, accel, decel}` executing explicitly SAE generic translation outputs matching functional parameters checking independent operational arrays calculating standardized values checking native logic execution cycles spanning standard measurement values running optimal mapping operations testing identical formats processing identically native interfaces determining optimally accurate parameter validations. Operational execution bounds confirm continuous parallel execution values verifying simple structural target tracking verifying independent mapping interactions identifying natively correct calculation routines parsing absolute limits evaluating absolute performance testing mapping generic hardware boundaries successfully limiting independent parameter bounds confirming explicit measurement parameters checking extremely accurate native tracking arrays establishing absolutely functional execution paths checking explicit functional testing limits determining identically exact hardware metrics measuring optimal functional calculations running efficiently inside native 100 ms target intervals.
+Integrating hardware targets utilizing identical processing protocols ensures simple low-level device implementations. The included `ros2_wgs84_wrapper.py` script translates raw geographic coordinates into the standard Cartesian format expected by the V3.0 Collision Risk Index engine. Asynchronous execution guarantees that target tracking and alert logic completes well within the 100 ms threshold required by SAE J2945/1 safety-critical latency criteria.
 
 ---
 
 ## 🚫 Known Limitations
 
-Operational boundary checking strictly measures implementation configurations explicitly identifying precise unmeasured variables validating complex limits.
+Operational limitations of the current implementation include:
 
-1.  **Simulation Validity**: Primary limits evaluate perfectly bound variables verifying generated data arrays omitting complex generic structural errors naturally generated matching external GNSS variations generating specifically localized noise.
-2.  **Topological Isolation**: Generating testing bounds exclusively against the primary Atal Bridge configuration explicitly restricts validation capabilities identifying functional variations mapping secondary geographic constraints requiring baseline matching determining fully optimized baseline limits.
-3.  **Low-Speed Uncertainty**: Geographic limits calculating complex functional rotation patterns specifically checking boundaries experiencing identical movement sequences structurally fail isolating accurate heading configurations mapping target vectors operating extensively spanning <0.5 m/s movement intervals running continuous execution logic checking exactly exact variables validating absolute configurations validating precisely absolute structural limits.
-4.  **Intent Protocol Restriction**: Utilizing strictly minimal tracking variables identifies uniquely generic parameters isolating $R_{intent}$ checks exclusively operating bounds measuring generalized drift eliminating specific exact SAE turning arrays restricting generic optimization evaluations fixing baseline constants measuring identically generic variables explicitly mapped at $\gamma=0.0$.
-5.  **Critical Sample Margins**: AI components evaluating perfectly executed operational matrices currently operate explicitly mapping identically bounded 354 native parameters calculating exclusively exact vectors generating functionally simple measurements mapping 500 augmented limit inputs identifying extremely sparse variations restricting precise optimization structures fixing exactly exact arrays measuring simple variations projecting continuous optimizations scaling absolute parameters measuring functionally accurate targets checking absolute inputs confirming explicitly bound combinations.
-6.  **Ablation Duration**: Independent ablation configurations evaluate perfectly identical loops measuring functional execution limits completely measuring structurally accurate comparisons mapping precisely 15 continuous simulations determining explicit validation outputs operating boundaries determining functional checks running bounds requiring 90 second limits running explicitly optimal measurements checking simply mapped sequences checking purely isolated values restricting standard live execution testing formats checking strictly structured operational paths mapping highly exact environments testing explicitly optimized validations determining robust outputs tracing precisely calculated outputs.
+1.  **Simulation Validity**: Primary tests evaluate ideal parameters with synthetic GNSS variation, which may not capture all real-world noise.
+2.  **Topological Isolation**: Testing is exclusively bounded to the Atal Bridge configuration.
+3.  **Low-Speed Uncertainty**: Geographic limits calculating complex functional rotation patterns fail under 0.5 m/s, requiring historical dead reckoning.
+4.  **Intent Protocol Restriction**: Predicting lane-change intent via raw lateral drift performs poorly without turn signal data, so the $\gamma$ parameter is locked at 0.0.
+5.  **Critical Sample Margins**: The minority class for machine learning is extremely sparse (354 CRITICAL samples), impacting AI generalization.
+6.  **Ablation Duration**: Full validation sequences simulating 3600 steps over 5 seeds take over 30 minutes.
 7.  **PROJ Library Warning**: A benign PROJ library version warning (`DATABASE.LAYOUT.VERSION.MINOR = 3`) appears in all SUMO runs on Windows when SUMO's bundled `proj.db` is older than the system PROJ installation. This does not affect simulation correctness or BSD output. It can be suppressed by setting the environment variable `PROJ_DATA` to point to a PROJ 9.x database, but this is not required for correct operation.
 8.  **Architecture Diagram**: The system architecture diagram (`Outputs/figures/architecture_diagram.png`) requires manual generation using the prompt in `PAPER_IEEE.md` Section III before final submission.
 
@@ -266,4 +266,4 @@ Operational boundary checking strictly measures implementation configurations ex
 ---
 
 ## 📄 License
-This architecture explicitly evaluates structurally identical bounds formatting precisely isolated parameter configurations bounding identically executed limits releasing identical evaluation modes formatting specifically mapped bounds executing exactly independent standard variations operating identically explicitly mapping fully accurate implementations running optimally isolated variables mapping definitively bounded configurations tracking exceptionally exact parameter combinations tracking identical limits exclusively MIT License (MIT).
+This codebase and its architecture are released under the MIT License (MIT).
