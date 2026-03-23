@@ -180,7 +180,7 @@ The math looks at two things:
 | Correct-side blinker AND actively drifting toward threat | 0.4 + 0.6 = **1.0** (Maximum!) |
 
 *Wait, what if the OTHER car swerves into me?*
-Good question! The "Intent" test only reads YOUR blinkers. But in our **V3.3 Upgrade**, we added a **Lateral TTC (Time-To-Collision)** sensor. This watches for "side-swipes" — even if the other car doesn't have its blinker on, the Brain can see them drifting into your side and will scream "CRITICAL!" before you even touch!
+Good question! The "Intent" test only reads YOUR blinkers. But in our **V3.0 framework**, we added a **Lateral TTC (Time-To-Collision)** sensor. This watches for "side-swipes" — even if the other car doesn't have its blinker on, the Brain can see them drifting into your side and will scream "CRITICAL!" before you even touch!
 
 ---
 
@@ -219,7 +219,7 @@ The Brain converts the CRI number into one of four alert levels:
 | **0.30 – 0.59** | 🟡 **CAUTION** | A small amber light turns on in your side mirror. There's a car nearby, but it's not immediately dangerous. Just be aware! |
 | **0.60 – 0.79** | 🔴 **WARNING** | The amber light starts flashing, AND a loud **BEEP BEEP BEEP** plays through your speakers. DO NOT change lanes right now! |
 | **0.80 – 1.00** | 🚨 **CRITICAL** | Everything above, PLUS the car might grab your steering wheel and pull you back into your lane! A heavy truck is right there, it can't stop, and you're turning into it! |
-| **Model Sync %** | **- 🔗 -** | This metric (visible on your dashboard) shows how perfectly the AI matches these physics values. At 99.8%, it means the AI is a perfect reflection of the science. |
+| **Model Sync %** | **- 🔗 -** | This tracks the percentage of timesteps where the AI and physics model agree on alert level. The AI model is trained to replicate the physics engine's alert classifications, achieving an overall accuracy of 86.48% on the test set. |
 
 **Why is CRITICAL set at 0.80 and not lower?**
 Because the Critical alert can override your steering! If the threshold were too low, the car might yank your wheel when there's no real danger — and THAT could cause an accident. Setting it at 0.80 means the Brain is really, REALLY sure before it touches your steering.
@@ -256,9 +256,9 @@ For anyone who wants to build this system (in SUMO or in a real car), here's the
 | Turn signal weight | $w_{sig}$ | 0.4 | Strong indicator of intent |
 | Lateral drift weight | $w_{lat}$ | 0.6 | Actual drift is stronger than intention |
 | Max lane-change lateral speed | $v_{lat,max}$ | 1.0 m/s | 3.5m lane in 3–5 seconds |
-| CRI weight: stopping | $\alpha$ | 0.15 | Optimized via Grid Search proxy |
+| CRI weight: stopping | $\alpha$ | 0.20 | Optimized via Grid Search proxy |
 | CRI weight: time to crash | $\beta$ | 0.80 | Heaviest standard for collisions |
-| CRI weight: intent | $\gamma$ | 0.05 | Final intent amplifier |
+| CRI weight: intent | $\gamma$ | 0.00 | Disabled in 5-field BSM to avoid noise |
 | CRI weight: packet loss | $\epsilon$ | 0.30 | Uncertainty, not panic |
 | CAUTION threshold | $\theta_1$ | 0.30 | Visual-only alert |
 | WARNING threshold | $\theta_2$ | 0.60 | Audible alert |
@@ -269,7 +269,7 @@ For anyone who wants to build this system (in SUMO or in a real car), here's the
 
 While the Math Engine uses solid, rigid logic, the AI behaves like a **Digital Twin**. It's a "Ghost Brain" that has watched millions of crashes in a simulator and learned the patterns. 
 
-Our AI is **99.80% synchronized** with the physics. This means if the Math Brain says "Look out!", the AI Brain almost always agrees. On your dashboard, the **Model Sync %** shows you this synchronization in real-time. If it's near 100%, you know the science is working perfectly!
+The AI model is trained to replicate the physics engine's alert classifications, achieving an overall accuracy of 86.48% on the test set. On your dashboard, the **Model Sync %** shows this synchronization in real-time — it tracks the percentage of timesteps where the AI and physics model agree on alert level.
 
 ---
 

@@ -1,41 +1,42 @@
-# 🚗 V2V Blind Spot Detection (BSD) System
-### *Predictive Physics-Based Collision Risk Analytics with AI-Hybrid Validation*
+# V2V Blind Spot Detection (BSD) System
+
+**A Physics-AI Hybrid Framework for Cooperative Blind Spot Risk Assessment**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-yellow.svg)](https://www.python.org/)
 [![Simulator SUMO](https://img.shields.io/badge/Simulator-SUMO1.19+-blue.svg)](https://sumo.dlr.de/docs/index.html)
 [![Model Version](https://img.shields.io/badge/Math_Model-V3.0-green.svg)](Mathematical_Model_V2V_BSD.md)
-[![Status](https://img.shields.io/badge/Status-Research_Ready-brightgreen.svg)]()
 
 ---
 
-## 🌟 Abstract
+## Abstract
 
-The **Vehicle-to-Vehicle (V2V) Blind Spot Detection System** is a deterministically bounded algebraic collision detection framework utilizing the standard Basic Safety Message (BSM). By exclusively parsing a 5-field BSM vector consisting solely of geometric position, speed, and acceleration magnitude components, the system maintains strict backward-compatible operability. Through a carefully constructed Mathematical Model V3.0 utilizing a multiplicative severity gate, the physics framework executes high-fidelity assessments achieving an outstanding ROC Discriminatory AUC of **0.9875** against a precisely calibrated 2.27% ground truth positive proximity rate. Testing across completely autonomous traffic traversing standard topologies concurrently alongside structurally injected Traffic Signal Violation (TSV) and Hilly Narrow Road (HNR) parameters spanning a dense 539-edge Indian corridor continuously logged 146,051 distinct telemetry observations. Parallel integration tracking XGBoost machine-learning structures identifies an impressive 80.7% CRITICAL-class independent recall factor, guaranteeing complementary redundancy covering nonlinear environmental profiles missing standard analytical formulations.
+This project implements a Vehicle-to-Vehicle (V2V) Blind Spot Detection system that uses only 5 fields from the SAE J2735 Basic Safety Message (BSM): position (x, y), speed, acceleration, and deceleration. The core physics engine computes a Collision Risk Index (CRI) using a multiplicative severity gate that suppresses false-positive accumulation from low-magnitude noise.
 
----
-
-## 💻 System Requirements
-
-The framework necessitates minimal hardware scaling natively processing lightweight arithmetic vectors optimizing localized hardware architectures.
-*   **Operating System**: Windows 10/11 or Ubuntu Linux 20.04+
-*   **Language**: Python 3.10+
-*   **Simulation Engine**: Eclipse SUMO 1.19+ 
-    *   *Windows*: Execute [Eclipse Release Installation](https://sumo.dlr.de/releases/)
-    *   *Ubuntu*: `sudo apt-get install sumo sumo-tools`
-*   **Execution Note**: Activating `--no-gui` headless runs automatically selects `libsumo` ensuring a 10× parallel execution acceleration. Enabling `--gui` successfully redirects control flow defaulting native `TraCI` interactions.
+The system was validated over 146,051 vehicle-pair observations on a 539-edge Atal Bridge road network (Navi Mumbai, India) using Eclipse SUMO, with injected Traffic Signal Violation (TSV) and Hilly Narrow Road (HNR) conflict scenarios. The physics model achieves an AUC of 0.9874 against a kinematic near-miss ground truth (2.27% positive rate). A complementary XGBoost classifier achieves 81.8% CRITICAL-class recall, providing dual-redundant detection.
 
 ---
 
-## 🚀 Installation
+## System Requirements
 
-Ensure `SUMO_HOME` exists designating operational execution trajectories bounding internal binary parameters checking absolute execution values completing functional tracking sequences verifying required path variables.
+- **Operating System**: Windows 10/11 or Ubuntu Linux 20.04+
+- **Language**: Python 3.10+
+- **Simulation Engine**: Eclipse SUMO 1.19+ (published results generated with sumolib 1.26.0)
+  - *Windows*: Download from [Eclipse SUMO Releases](https://sumo.dlr.de/releases/)
+  - *Ubuntu*: `sudo apt-get install sumo sumo-tools`
+- **Environment Variable**: `SUMO_HOME` must point to your SUMO installation directory.
+- **GUI vs Headless**: Use `--no-gui` for headless mode (uses `libsumo`, significantly faster). Use `--gui` for the SUMO graphical interface (uses `TraCI`).
+- **Random Seed**: Default seed is 42 (configurable via `--seed`). All published results use seed 42.
 
-1.  Clone the repository structure precisely navigating operational scopes checking absolute environments:
+---
+
+## Installation
+
+1. Clone the repository:
     ```bash
-    git clone https://github.com/your-username/V2V-BSD.git
+    git clone <repository-url>
     cd V2V-BSD
     ```
-2.  Enable virtual environment isolations bounding explicit dependencies:
+2. Create and activate a virtual environment:
     ```bash
     python -m venv .venv
     # Windows:
@@ -43,38 +44,34 @@ Ensure `SUMO_HOME` exists designating operational execution trajectories boundin
     # Mac/Linux:
     source .venv/bin/activate
     ```
-3.  Deploy pip dependency tracking structures:
+3. Install dependencies:
     ```bash
     pip install -r requirements.txt
     ```
 
 ---
 
-## ⚡ Quick Start
+## Quick Start
 
-Generate comprehensive output structures monitoring complete system capabilities generating exactly verified baseline interactions.
-
-1. **Perform Headless Simulation**: Generates `bsd_metrics.csv` compiling exactly 146,051 operational metrics executing complete boundary tracking.
+1. **Run the simulation** (generates `Outputs/bsd_metrics.csv` with 146,051 rows):
    ```bash
    cd Scripts
    python v2v_bsd_simulation.py --no-gui --steps 3600
    ```
-2. **Train AI & Generate Evaluations**: Computes absolute ROC structures validating XGBoost tracking vectors saving explicit figure outputs.
+2. **Evaluate and train the AI model**:
    ```bash
    python evaluate_system.py
    python train_ai_model.py
    python generate_paper_figures.py
    ```
-3. **Trigger Live Platform Dashboard**: Monitors interactive arrays parsing static arrays observing precisely normalized interactions.
+3. **Launch the dashboard**:
    ```bash
    streamlit run dashboard.py
    ```
 
 ---
 
-## 🏗️ System Architecture
-
-Data flows unidirectionally parsing absolute spatial states validating functional physics computations parsing continuous interaction limits.
+## System Architecture
 
 ```mermaid
 graph TD
@@ -84,13 +81,13 @@ graph TD
 
     subgraph "Layer 2: Communication & Perception"
         SUMO -- "BSM @ 10 Hz (5 fields)" --> Comm["Gilbert-Elliott Channel\n(p_G2B=0.01, p_B2G=0.10)"]
-        Comm --> DR["Dead Reckoning\n(CA-CYR, τ_eff = τ_base + k_lost·Δt)"]
-        DR --> GPS["GPS Noise Filter\n(σ = 1.5 m Gaussian)"]
+        Comm --> DR["Dead Reckoning\n(CA-CYR, cap 0.5s)"]
+        DR --> GPS["GPS Noise\n(Gauss-Markov, sigma=1.5m)"]
     end
 
     subgraph "Layer 3: Intelligence Kernel"
-        GPS -- "BSM @ 10 Hz (5 fields)" --> Engine["BSD Engine V3.0\nCRI = P × max(R_d,R_t) × (αR_d+βR_t+γR_i) × Γ_PLR"]
-        GPS -- "BSM @ 10 Hz (5 fields)" --> AI["XGBoost Hybrid\n18 features | SMOTE | CRITICAL recall 80.7%"]
+        GPS --> Engine["BSD Engine V3.0\nCRI = P * max(R_d,R_t) * (aR_d+bR_t+gR_i) * PLR"]
+        GPS --> AI["XGBoost Classifier\n18 features | SMOTE | 81.8% CRIT recall"]
         Eval["Evaluation\n(ROC/AUC, ablation)"] -. "model training" .-> AI
     end
 
@@ -105,165 +102,206 @@ graph TD
 
 ---
 
-## 🧮 Mathematical Model Summary
+## Mathematical Model Summary
 
-### The 5-Field BSM
-$$ BSM = \{x, y, v, a, d\} $$
-Heading $\theta(t)$ and yaw rate $\dot{\theta}(t)$ derive purely from geographic displacement $x(t)-x(t-1)$, bound by low-speed filters protecting coordinates dropping beneath $0.5$ m/s preventing static noise amplification.
+### 5-Field BSM Input
 
-### The Collision Risk Index (CRI) V3.0
-The primary innovation structurally isolates the collision logic mapping explicitly scaling multiplicative constraints:
-$$ \text{CRI} = \text{clip} \Big( P \cdot \max(R_{decel}, R_{ttc}) \cdot (0.20 R_{decel} + 0.80 R_{ttc} + 0.00 R_{intent}) \cdot \Gamma_{plr},\ 0,\ 1 \Big) $$
-Enforcing $\max(R_{decel}, R_{ttc})$ bounds low-probability artifacts limiting alert structures preventing baseline saturation effectively minimizing false-positive distributions guaranteeing strictly reliable tracking components.
+$$BSM = \{x, y, v, a, d\}$$
 
-### Alert Level Boundary Mapping
-Left and right sensor boundaries execute completely asynchronous hysteresis sequences suppressing noise vectors scaling exact classification parameters checking explicit transitions requiring $N_H=3$ consecutive escalations:
+Heading and yaw rate are derived from consecutive position history. A low-speed guard holds the last known heading when velocity drops below 0.5 m/s to prevent GPS jitter from corrupting angle estimates.
 
-| Alert Mode | Score Condition | Color Identifier | Response Definition |
-| :--- | :--- | :--- | :--- |
-| **SAFE** | CRI < 0.30 | GREEN | Generic nominal operational tracking values |
-| **CAUTION** | CRI ≥ 0.30 | YELLOW | Alert mapping structural positional conflict |
-| **WARNING** | CRI ≥ 0.60 | ORANGE | Anticipated intersection evaluating collision metrics |
-| **CRITICAL** | CRI ≥ 0.80 | RED | Absolute proximity event evaluating immediate contact limits |
+### Collision Risk Index (CRI) V3.0
+
+$$\text{CRI} = \text{clip}\Big(P \cdot \max(R_{\text{decel}}, R_{\text{ttc}}) \cdot (\alpha R_{\text{decel}} + \beta R_{\text{ttc}} + \gamma R_{\text{intent}}) \cdot \Gamma_{\text{plr}},\ 0,\ 1\Big)$$
+
+The `max(R_decel, R_ttc)` severity gate requires at least one physical risk dimension to reach a dangerous level before the composite index can escalate, preventing false-positive accumulation from compounded low-magnitude noise. Optimized weights: alpha=0.20, beta=0.80, gamma=0.00.
+
+### Alert Levels
+
+Left and right blind spot zones are scored independently. Alert upgrades require 3 consecutive steps at the higher level (hysteresis); downgrades require CRI to drop below the threshold minus a δ_h=0.05 band to prevent oscillation near boundaries.
+
+| Level | CRI Threshold | Meaning |
+| :--- | :--- | :--- |
+| **SAFE** | < 0.30 | No significant risk detected |
+| **CAUTION** | >= 0.30 | Target present in blind spot zone |
+| **WARNING** | >= 0.60 | Closing trajectory with limited stopping margin |
+| **CRITICAL** | >= 0.80 | Imminent collision risk, immediate action required |
 
 ---
 
-## 📂 Complete File Directory
+## File Directory
 
-Systematic division segregates explicit execution parameters covering unique architectural layers fully documenting execution bounds checking specific implementation elements matching unique functional limits.
-
-| Directory / File | Description |
+| Path | Description |
 | :--- | :--- |
-| `PAPER_IEEE.md` | Formal IEEE publication manuscript verifying structural model elements completely. |
-| `README.md` | General integration and implementation system directory. |
-| `Mathematical_Model_V2V_BSD.md` | The comprehensive master specification cataloguing exactly defining the V3.0 physics model. |
-| `Mathematical_Model_Explanation.md` | Preliminary architectural concept outlining operational hypothesis. |
-| `requirements.txt` | Python dependency declarations standardizing explicit installation requirements. |
-| `fix_math_doc.py` | Standalone utility script enforcing document alignment standardizing numerical outputs ensuring formatting synchronization. |
 | **`Scripts/`** | |
-| `bsd_engine.py` | Functional python implementation defining Section IV executing physics calculations directly. |
-| `v2v_bsd_simulation.py` | Complete Eclipse SUMO wrapper script executing traffic boundaries recording active metrics. |
-| `train_ai_model.py` | Asynchronous XGBoost integration handling executing SMOTE distribution evaluating isolated machine learning. |
-| `bsd_utils.py` | Global calibration parameters standardizing precisely ground truth bounding sequences measuring baseline evaluations. |
-| `dashboard.py` | Live interactive Streamlit graphical representation operating parallel visualizations determining precise evaluation modes. |
-| `evaluate_system.py` | System validation logic calculating operational AUC vectors mapping structured analytical precision targets. |
-| `scenario_injector.py` | Native structural logic module overriding simulation states introducing explicit bounding values tracking dynamic edge cases. |
-| `ablation_study.py` | Structural validation process optimizing independent components defining explicit tracking combinations testing bounding constraints. |
-| `sensitivity_analysis.py` | External testing sequence stressing generic operational systems determining variable limits evaluating tracking constraints. |
-| `optimize_weights.py` | Independent grid search checking bounds defining specific weighting execution measuring precise structural mappings. |
-| `generate_paper_figures.py` | Internal graphics processing creating precise PNG deliverables scaling exactly mapped internal evaluation limits. |
-| `gen_bridge_routes.py` | Pre-processing structure creating dense intersection layouts tracking explicit movement arrays standardizing randomized vehicle arrays. |
-| `run.py` | Simplified sequential launcher targeting straightforward test execution boundaries checking generalized components executing tracking strings. |
-| `run_multi_seed.py` | Extended automation executing identically scaled parameter sequences exploring identical randomization sequences generating comprehensive boundaries. |
-| `ros2_wgs84_wrapper.py` | Field implementation logic executing raw structural variables converting operational sensor signals generating continuous BSM arrays. |
-| `test_engine.py` | Deterministic unit testing validating isolated computational limits calculating exactly bound internal logic mechanisms. |
-| `test_ai_model.py` | Unit sequence assessing specific interaction states measuring continuous AI loading checks tracking precisely matched arrays. |
+| `bsd_engine.py` | Core V3.0 physics engine: coordinate transform, zone probability, risk components, CRI computation |
+| `v2v_bsd_simulation.py` | SUMO simulation wrapper: runs TraCI/libsumo loop, applies channel model, logs metrics |
+| `train_ai_model.py` | XGBoost training pipeline with SMOTE oversampling and TimeSeriesSplit cross-validation |
+| `bsd_utils.py` | Shared utilities: ground truth definition, threshold constants |
+| `dashboard.py` | Streamlit real-time dashboard with live tracking and historical replay modes |
+| `evaluate_system.py` | ROC/AUC computation and baseline comparisons |
+| `scenario_injector.py` | TSV and HNR conflict scenario injection during simulation |
+| `ablation_study.py` | Full ablation study (runs SUMO simulation for each configuration) |
+| `fast_ablation.py` | Lightweight vectorized ablation on pre-computed CSV data |
+| `sensitivity_analysis.py` | Parameter sensitivity sweep (GPS noise, PLR, TTC_crit, friction) |
+| `optimize_weights.py` | Grid search over alpha, beta, gamma weights to maximize F1 |
+| `generate_paper_figures.py` | Generates all publication figures from simulation outputs |
+| `gen_bridge_routes.py` | SUMO route file generator for the Atal Bridge network |
+| `run.py` | Entry point launcher for simulation and evaluation |
+| `run_multi_seed.py` | Multi-seed evaluation for statistical robustness |
+| `ros2_wgs84_wrapper.py` | ROS2 node for WGS84-to-Cartesian coordinate conversion |
+| `export_model.py` | Exports trained XGBoost model to ONNX format |
+| `test_engine.py` | Unit tests for the BSD physics engine |
+| `test_ai_model.py` | Unit tests for the AI training pipeline |
+| `data_integrity_check.py` | Validates consistency of output CSV data |
 | **`Maps/`** | |
-| `atal.net.xml` | Primary topological Indian baseline road network rendering explicit bounds formatting geographical parameters establishing routing geometries. |
-| `atal.osm` | Legacy OpenStreetMap bounding boundaries executing raw mapping components tracing exactly generic variables tracking structural parameters. |
-| `atal_v2v.sumocfg` | Master baseline configuring operational paths formatting tracking arrays navigating fundamental interactions. |
-| `atal_v2v.rou.xml` | Normal continuous simulation vector mapping standard interaction paths identifying nominal configurations. |
-| `atal_bridge_scenarios.rou.xml` | Advanced sequence generator creating dynamic intersections exposing absolute routing arrays checking explicit routing patterns. |
-| `atal_trips.xml` | Isolated routing vectors validating generic topological checks running baseline verifications. |
-| `urban_intersection.net.xml` | Controlled synthetic mapping geometry constructing identical TSV scenarios evaluating complex interaction nodes explicitly evaluating intersection conflicts. |
-| `urban.sumocfg` | Baseline configurations structuring basic isolated junction environments executing general validation checks mapping targeted TSV routines. |
-| `intersection_tsv.sumocfg` | Active configuration matrix loading controlled arrays assessing dedicated violator vectors navigating precisely engineered interaction sequences. |
-| `scenario_tsv.rou.xml` | Specific traffic arrays determining precisely overlapping violator loops defining exactly measured targeted events exposing bounding conflicts. |
-| `hilly_road.net.xml` | Generative topological grid introducing significant geometric friction applying exactly mapped structural curves introducing spatial evaluation variance. |
-| `hilly_v2v.sumocfg` | Configuration arrays exposing specific bounding elements assessing dedicated constraints executing independent limits. |
-| `scenario_hilly.rou.xml` | Formatted routing sequences pushing targets calculating narrow edge limits isolating structural limitations measuring interaction bounds. |
+| `atal.net.xml` | Primary road network: 539-edge Atal Bridge corridor (Navi Mumbai) |
+| `atal.osm` | Source OpenStreetMap data for the Atal Bridge area |
+| `atal_v2v.sumocfg` | SUMO configuration for the main Atal Bridge simulation |
+| `atal_v2v.rou.xml` | Normal traffic route definitions for Atal Bridge |
+| `atal_bridge_scenarios.rou.xml` | TSV and HNR scenario route definitions |
+| `atal_trips.xml` | Trip definitions for route generation |
+| `urban_intersection.net.xml` | Synthetic intersection network for TSV testing |
+| `intersection_tsv.sumocfg` | SUMO configuration for intersection TSV scenarios |
+| `scenario_tsv.rou.xml` | Route definitions for TSV intersection scenarios |
+| `hilly_road.net.xml` | Synthetic hilly road network for HNR testing |
+| `hilly_v2v.sumocfg` | SUMO configuration for hilly road scenarios |
+| `scenario_hilly.rou.xml` | Route definitions for HNR scenarios |
 | **`Outputs/`** | |
-| `bsd_metrics.csv` | Primary raw logging structure accumulating exactly measured continuous execution records storing complete analytical components. |
-| `bsd_alerts.csv` | Categorical trigger evaluations isolating specific structural event constraints storing sequential bounds tracking execution values. |
-| `bsd_live.json` | Inter-process transmission protocol buffering exact states transferring precisely bounded array interactions loading UI rendering logic. |
-| `bsd_xgboost_model.json` | Binary ML weight architecture preserving precise validation parameters evaluating exact testing targets distributing exactly scaled arrays. |
-| `bsd_training_report.json` | General summary arrays specifying structured testing results storing specific precision outputs testing comprehensive logic execution bounds. |
-| `feature_importance.csv` | Ranked diagnostic array defining explicit tracking performance calculations identifying exact functional influences validating operational bounds. |
-| `figures/` | Final output rendering container executing complete structural comparisons checking identically targeted array metrics executing complex validations. |
+| `bsd_metrics.csv` | Primary output: per-timestep telemetry and CRI values (146,051 rows) |
+| `bsd_alerts.csv` | Alert-level events log |
+| `bsd_live.json` | Real-time state buffer for the Streamlit dashboard |
+| `bsd_xgboost_model.json` | Trained XGBoost model weights |
+| `bsd_training_report.json` | AI model training metrics and classification report |
+| `feature_importance.csv` | XGBoost feature importance rankings |
+| `figures/` | Generated publication figures (PNG, 300 DPI) |
+| **`paper/`** | |
+| `main.tex` | IEEE conference paper (LaTeX source) |
+| `*.png` | Publication figures for Overleaf compilation |
+
+> **Note:** The `paper/` directory contains copies of figures from `Outputs/figures/` for Overleaf compilation. Regenerate with `python generate_paper_figures.py` and copy to `paper/` before recompiling.
+
+| **Root Files** | |
+| `Mathematical_Model_V2V_BSD.md` | Complete V3.0 mathematical specification |
+| `Mathematical_Model_Explanation.md` | Accessible explanation of the mathematical model |
+| `requirements.txt` | Python dependencies |
 
 ---
 
-## 💻 CLI Reference
-Executing `v2v_bsd_simulation.py` incorporates explicitly bound targeting parameters parsing specific logic variations.
+## CLI Reference
 
-| Argument Name | Type | Default Value | Description |
+The main simulation script `v2v_bsd_simulation.py` accepts the following arguments:
+
+| Argument | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--gui` | Flag | False | Initiate standard SUMO graphical component checking TraCI executions bounding target rendering structures explicitly visualizing tracking geometry. |
-| `--no-gui` | Flag | True | Bypasses local visual tracking implementing explicit C++ parallel execution arrays checking absolutely enhanced performance paths. |
-| `--steps` | Integer | 3600 | Specify absolute simulation duration mapping tracking limits defining 10 Hz telemetry matrices defining structural sequence counts. |
-| `--alpha` | Float | 0.20 | Modify exact evaluation thresholds mapping explicitly scaled $R_{decel}$ dependencies bounding structural execution testing formats. |
-| `--beta` | Float | 0.80 | Designate continuous validation ratios executing explicit $R_{ttc}$ elements scaling testing variables exactly configuring boundary targets. |
-| `--gamma` | Float | 0.00 | Determine precise $R_{intent}$ execution targets verifying internal bounds mapping analytical optimization checks adjusting independent weights. |
-| `--mu` | Float | Params.MU_DEFAULT | Explicit validation mapping redefining global friction variables characterizing bounds verifying execution modifications testing parameters precisely. |
-| `--no-lat-ttc` | Flag | False | Restricts independent lateral structural variables checking continuous boundaries measuring completely constrained optimization targets standardizing independent variables. |
-| `--sigma-gps` | Float | 1.5 | Modifies absolute positional boundary checking generic distribution inputs tracking structural testing limits running identical optimization paths. |
-| `--ttc-crit` | Float | 6.0 | Adapts fundamental emergency detection boundaries verifying bounds matching precise performance optimization evaluations assessing explicitly exact variables. |
-| `--theta-3` | Float | 0.80 | Redefines emergency boundaries checking identical logic mappings confirming analytical variations standardizing generic bounding limits checking precisely executed variants. |
-| `--plr-g2b` | Float | 0.01 | Scales structural network degradation models determining specific continuous bounding configurations checking precise analytical variants mapping absolute target execution modes. |
-| `--seed` | Integer | 42 | Implements strictly predictable execution sequences targeting repeatable configuration bounds measuring generic simulation components bounding execution validations. |
-| `--map` | String | "default" | Modifies simulation environment bounds formatting identical topological arrays matching explicit boundary constraints choosing exactly predefined values ["default", "intersection", "hilly"]. |
-| `--disable-tsv` | Flag | False | Restricts analytical variation components eliminating explicitly mapped boundary arrays verifying continuous tracking parameters completely isolating functional TSV limits explicitly matching continuous evaluations. |
-| `--disable-hnr` | Flag | False | Nullifies specific structural overrides navigating exact topology metrics dropping uniquely localized overrides enforcing precisely identical variables matching nominal performance arrays checking nominal functions. |
+| `--gui` | Flag | False | Launch SUMO with graphical interface (uses TraCI) |
+| `--no-gui` | Flag | True | Run headless using libsumo (faster) |
+| `--steps` | Integer | 3600 | Number of simulation steps (at 10 Hz, 3600 = 360 seconds) |
+| `--alpha` | Float | 0.20 | Weight for R_decel in the CRI formula |
+| `--beta` | Float | 0.80 | Weight for R_ttc in the CRI formula |
+| `--gamma` | Float | 0.00 | Weight for R_intent in the CRI formula |
+| `--mu` | Float | 0.70 | Road surface friction coefficient |
+| `--no-lat-ttc` | Flag | False | Disable lateral TTC computation |
+| `--sigma-gps` | Float | 1.5 | GPS noise standard deviation (metres) |
+| `--ttc-crit` | Float | 4.0 | Critical TTC threshold (seconds) |
+| `--theta-3` | Float | 0.80 | CRITICAL alert threshold |
+| `--plr-g2b` | Float | 0.01 | Gilbert-Elliott GOOD-to-BAD transition probability |
+| `--seed` | Integer | 42 | Random seed for reproducibility |
+| `--map` | String | "default" | Map selection: "default" (Atal Bridge), "intersection", or "hilly" |
+| `--disable-tsv` | Flag | False | Disable Traffic Signal Violation scenario injection |
+| `--disable-hnr` | Flag | False | Disable Hilly Narrow Road scenario injection |
 
 ---
 
-## 📊 Verified Results
+## Results
 
-Performance parameters exactly match identical bounding variables evaluated across specific optimization runs tracking continuous baseline arrays completing precise outputs.
-
-| Metric | Measured Value |
+| Metric | Value |
 | :--- | :--- |
-| Simulation Rows | 146,051 |
-| Unique Target Vehicles | 623 |
-| Event Warning Totals | 5,027 |
-| Validated Math Model AUC | 0.9874 |
-| Independent AI Hybrid AUC | 0.8191 |
-| AI Hybrid Accuracy | 86.48% |
-| XGBoost CRITICAL Recall Rate | 81.8% |
-| Ground Truth Positive Events | 3,314 |
-| Mathematical Positive Ground Truth Frequency | 2.27% |
-| Normal Scenario Row Division | 72,494 |
-| HNR Scenario Row Division | 45,311 |
-| TSV Scenario Row Division | 28,246 |
-| Left Frame CRITICAL Arrays | 3 |
-| Right Frame CRITICAL Arrays | 8 |
+| Total observations | 146,051 |
+| Unique target vehicles | 623 |
+| Physics model AUC | 0.9874 |
+| XGBoost hybrid AUC | 0.8191 |
+| XGBoost overall accuracy | 86.48% |
+| XGBoost CRITICAL recall | 81.8% |
+| Ground truth positive rate | 2.27% (3,314 events) |
+| Normal scenario rows | 72,494 |
+| HNR scenario rows | 45,311 |
+| TSV scenario rows | 28,246 |
 
 ---
 
-## 🔥 Real-World Deployment
+## Deployment
 
-System execution transfers directly to standard external hardware by relying entirely on native physical variables instead of deeply integrated proprietary CAN-bus signals.
+The system requires only a standard DSRC or C-V2X On-Board Unit (OBU) capable of broadcasting the 5-field BSM. Because it consumes only scalar position, speed, and acceleration values, it does not require CAN bus integration for secondary signals (steering angle, turn indicators).
 
-Integrating hardware targets utilizing identical processing protocols ensures simple low-level device implementations. The included `ros2_wgs84_wrapper.py` script translates raw geographic coordinates into the standard Cartesian format expected by the V3.0 Collision Risk Index engine. Asynchronous execution guarantees that target tracking and alert logic completes well within the 100 ms threshold required by SAE J2945/1 safety-critical latency criteria.
+The `ros2_wgs84_wrapper.py` script provides a ROS2 node that converts WGS84 coordinates to the local Cartesian frame used by the CRI engine. The XGBoost model can be exported to ONNX format via `export_model.py` for embedded inference.
 
----
-
-## 🚫 Known Limitations
-
-Operational limitations of the current implementation include:
-
-1.  **Simulation Validity**: Primary tests evaluate ideal parameters with synthetic GNSS variation, which may not capture all real-world noise.
-2.  **Topological Isolation**: Testing is exclusively bounded to the Atal Bridge configuration.
-3.  **Low-Speed Uncertainty**: Geographic limits calculating complex functional rotation patterns fail under 0.5 m/s, requiring historical dead reckoning.
-4.  **Intent Protocol Restriction**: Predicting lane-change intent via raw lateral drift performs poorly without turn signal data, so the $\gamma$ parameter is locked at 0.0.
-5.  **Critical Sample Margins**: The minority class for machine learning is extremely sparse (354 CRITICAL samples), impacting AI generalization.
-6.  **Ablation Duration**: Full validation sequences simulating 3600 steps over 5 seeds take over 30 minutes.
-7.  **PROJ Library Warning**: A benign PROJ library version warning (`DATABASE.LAYOUT.VERSION.MINOR = 3`) appears in all SUMO runs on Windows when SUMO's bundled `proj.db` is older than the system PROJ installation. This does not affect simulation correctness or BSD output. It can be suppressed by setting the environment variable `PROJ_DATA` to point to a PROJ 9.x database, but this is not required for correct operation.
-8.  **Architecture Diagram**: The system architecture diagram (`Outputs/figures/architecture_diagram.png`) requires manual generation using the prompt in `PAPER_IEEE.md` Section III before final submission.
+**Note**: Hardware deployment has not been tested. All results are from SUMO simulation only.
 
 ---
 
-## 📌 Citation
+## Known Limitations
+
+1. **Simulation-only validation**: All results come from SUMO microscopic simulation. Real-world V2V channel impairments, hardware latencies, and multipath effects may differ from the Gilbert-Elliott model used here.
+2. **Single network topology**: Evaluation is limited to the Atal Bridge corridor (Navi Mumbai). Generalization to other road geometries is untested.
+3. **Proxy ground truth**: The kinematic near-miss ground truth shares structural inputs with the CRI (position, speed, gap), which may inflate measured AUC. Real collision labels from instrumented vehicles would provide more rigorous evaluation.
+4. **Low-speed heading uncertainty**: Below 0.5 m/s, heading is held constant via dead reckoning because GPS jitter dominates position deltas.
+5. **No intent estimation**: Lane-change intent from lateral drift alone performs poorly without turn signal data; gamma is set to 0.00.
+6. **Sparse CRITICAL samples**: Only 354 CRITICAL events in the dataset, limiting AI model generalization for the highest-risk class.
+7. **Homogeneous vehicle dynamics**: SUMO treats all vehicles identically within a type class; real vehicles have heterogeneous braking and acceleration profiles.
+8. **No adversarial robustness**: The system trusts all received BSM data at face value. Spoofed V2V messages could produce incorrect risk assessments. Misbehavior detection is not implemented.
+
+---
+
+## Fail-Safe Behavior
+
+The BSD engine defaults to the safe state in degraded conditions:
+- **Packet loss > 4 consecutive**: Target is dropped (CRI → 0) rather than relying on stale extrapolation
+- **Dead reckoning cap**: Projections beyond 0.5s are rejected
+- **AI model unavailable**: System operates on physics model alone; AI predictions return 'N/A'
+- **No V2V targets in range**: Both sides report SAFE (CRI = 0)
+- **Low speed (< 0.5 m/s)**: Heading is held constant to prevent GPS jitter corruption
+- **No adversarial detection**: The system trusts all BSM data at face value; misbehavior detection is not implemented
+
+---
+
+## Reproduction Checklist
+
+To reproduce the published results from a clean clone:
+
+1. Install Python 3.10+ and Eclipse SUMO 1.19+
+2. `pip install -r requirements.txt` (exact pinned versions)
+3. `cd Scripts && python v2v_bsd_simulation.py --no-gui --steps 3600 --seed 42`
+   - Expected output: `Outputs/bsd_metrics.csv` with 146,051 rows
+4. `python evaluate_system.py` — generates ROC curves, computes AUC (expected: 0.9874)
+5. `python train_ai_model.py` — trains XGBoost and regenerates `bsd_training_report.json` + `feature_importance.csv`
+6. `python generate_paper_figures.py` — regenerates all 9 publication figures
+7. `python fast_ablation.py` — reproduces ablation table (Table III in paper)
+8. `python run_multi_seed.py` — runs 5-seed robustness analysis
+
+All random seeds are fixed. Results should be deterministic given identical SUMO and Python versions.
+
+> **Important:** SUMO is not a pip dependency. Install Eclipse SUMO 1.19+ separately and ensure `SUMO_HOME` is set. Results may vary with different SUMO versions due to traffic microsimulation differences.
+
+---
+
+## Citation
+
 ```bibtex
-@article{Author2026V2V,
-  title={Vehicle-to-Vehicle Communication for Blind Spot Detection and Accident Prevention: A Physics-AI Hybrid Framework with 5-Field BSM and Severity-Gated Collision Risk Indexing},
-  author={[Author Name]},
-  journal={IEEE Transactions on Intelligent Transportation Systems},
+@inproceedings{khairnar2026v2v,
+  title={Vehicle-to-Vehicle Communication for Blind Spot Detection and
+         Accident Prevention: A Physics-AI Hybrid Framework with 5-Field BSM
+         and Severity-Gated Collision Risk Indexing},
+  author={Khairnar, Vaishali and Kadam, Omkar and Phanse, Gauri
+          and Khan, Afraz and Prasad, Abhinav},
+  booktitle={Proceedings of the IEEE International Conference on
+             Intelligent Transportation Systems},
   year={2026}
 }
 ```
 
 ---
 
-## 📄 License
-This codebase and its architecture are released under the MIT License (MIT).
+## License
+
+This project is released under the MIT License.

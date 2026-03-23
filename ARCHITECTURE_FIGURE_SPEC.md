@@ -18,7 +18,7 @@
 
 ### Layer 3 (fill: #FEF9E7) — "Intelligence Kernel"
 - **Box 6** (left, larger): "BSD Engine V3.0 — CRI = P × max(R_d, R_t) × [αR_d + βR_t + γR_i] × Γ_PLR"  
-- **Box 7** (right): "XGBoost Hybrid — 18 features | SMOTE | CRITICAL recall 80.7%"
+- **Box 7** (right): "XGBoost Hybrid — 18 features | SMOTE | CRITICAL recall 81.8%"
 
 ### Layer 4 (Top, fill: #FDF2F8) — "Presentation & Analytics"
 - **Box 8** (left): "Streamlit Dashboard (bsd_live.json)"  
