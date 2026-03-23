@@ -182,8 +182,9 @@ def recalculate_cri_sandbox(tt_list, weights):
         R_weighted = w_norm['ALPHA'] * tt.get('R_decel', 0.0) + \
                      w_norm['BETA'] * tt.get('R_ttc', 0.0) + \
                      w_norm['GAMMA'] * tt.get('R_intent', 0.0)
+        severity_gate = max(tt.get('R_decel', 0.0), tt.get('R_ttc', 0.0))
         plr_multiplier = 1.0 + 0.30 * tt.get('plr', 0.0)
-        new_cri = np.clip(tt.get('P', 0.0) * R_weighted * plr_multiplier, 0.0, 1.0)
+        new_cri = np.clip(tt.get('P', 0.0) * severity_gate * R_weighted * plr_multiplier, 0.0, 1.0)
         new_tt = tt.copy(); new_tt['cri'] = new_cri; re_cris.append(new_tt)
     return re_cris
 
@@ -229,7 +230,10 @@ def render_platinum_ui():
                 vehicles[vid][f'alert_{s}'] = 'SAFE' if c < 0.3 else ('CAUTION' if c < 0.6 else ('WARNING' if c < 0.8 else 'CRITICAL'))
 
     # 3. METRICS PREP
-    live_cumulative = data.get('alert_counts', {"safe":0, "caution":0, "warning":0, "critical":0})
+    if st.session_state.mode == "LIVE Tracking":
+        live_cumulative = data.get('alert_counts', {"safe":0, "caution":0, "warning":0, "critical":0})
+    else:
+        live_cumulative = {"safe":0, "caution":0, "warning":0, "critical":0}
     
     # Instantaneous counts for current scanning
     counts_now = {"SAFE":0, "CAUTION":0, "WARNING":0, "CRITICAL":0}
@@ -250,7 +254,7 @@ def render_platinum_ui():
     # 4. HEAD: TOP METRICS
     m1, m2, m3, m4, m5 = st.columns(5)
     # Use the true total count from the simulation engine
-    total_nodes = data.get('active_count', len(vehicles))
+    total_nodes = data.get('active_count', len(vehicles)) if st.session_state.mode == "LIVE Tracking" else len(vehicles)
     with m1: st.markdown(f'<div class="glass-card"><div class="metric-label">NETWORK NODES</div><div class="metric-val">{total_nodes}</div></div>', unsafe_allow_html=True)
     with m2: st.markdown(f'<div class="glass-card glow-caution"><div class="metric-label">MODEL SYNC</div><div class="metric-val" style="color:#6366f1;">{st.session_state.avg_ai_acc:.1f}%</div></div>', unsafe_allow_html=True)
     
@@ -258,7 +262,8 @@ def render_platinum_ui():
     with m3: st.markdown(f'<div class="glass-card glow-warning"><div class="metric-label">TOTAL WARNINGS</div><div class="metric-val" style="color:#f97316;">{live_cumulative.get("warning", 0)}</div></div>', unsafe_allow_html=True)
     with m4: st.markdown(f'<div class="glass-card glow-critical"><div class="metric-label">TOTAL CRITICALS</div><div class="metric-val" style="color:#ef4444;">{live_cumulative.get("critical", 0)}</div></div>', unsafe_allow_html=True)
     
-    with m5: st.markdown(f'<div class="glass-card"><div class="metric-label">LATENCY</div><div class="metric-val" style="font-size:1.5rem; margin-top:10px;">{data.get("elapsed",0) if st.session_state.mode=="LIVE Tracking" else 0}s</div></div>', unsafe_allow_html=True)
+    elapsed_val = data.get("elapsed", 0) if st.session_state.mode == "LIVE Tracking" else 0
+    with m5: st.markdown(f'<div class="glass-card"><div class="metric-label">LATENCY</div><div class="metric-val" style="font-size:1.5rem; margin-top:10px;">{elapsed_val}s</div></div>', unsafe_allow_html=True)
     
     # Sub-metrics for Instantaneous
     st.markdown(f"""
@@ -286,7 +291,7 @@ def render_platinum_ui():
                                  range_color=[0, 1])
                 
                 # ADD V2V COMMUNICATION LINKS
-                links = data.get('comm_links', [])
+                links = data.get('comm_links', []) if st.session_state.mode == "LIVE Tracking" else []
                 link_x, link_y = [], []
                 for link in links:
                     e_vid, t_vid = link.get('ego'), link.get('target')

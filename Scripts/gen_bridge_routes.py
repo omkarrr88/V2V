@@ -91,13 +91,6 @@ def generate_comprehensive_routes():
                 break
         return route
     
-    for ml_edge in multi_lane_edges:
-        route = find_multilane_route(ml_edge, min_len=1, max_len=4)
-        # Single-edge routes are fine — we just need 2+ lanes
-        
-        route_str = " ".join(e.getID() for e in route)
-        nlanes = ml_edge.getLaneNumber()
-        
     # ================================================================
     # PHASE 1: BLIND SPOT PAIRS (THE "CHAOS" ENGINE)
     # ================================================================

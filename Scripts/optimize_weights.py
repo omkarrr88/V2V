@@ -40,9 +40,11 @@ def main():
             if gamma < 0.0 or gamma > 1.0:
                 continue
             
-            # Vectorized CRI — 100x faster than .apply()
-            cri_L = df['P_left']  * (alpha*df['R_decel_left']  + beta*df['R_ttc_left']  + gamma*df['R_intent_left'])  * df['plr_mult_left']
-            cri_R = df['P_right'] * (alpha*df['R_decel_right'] + beta*df['R_ttc_right'] + gamma*df['R_intent_right']) * df['plr_mult_right']
+            # Vectorized CRI with severity gate (matching bsd_engine.py)
+            sev_L = df[['R_decel_left', 'R_ttc_left']].max(axis=1)
+            sev_R = df[['R_decel_right', 'R_ttc_right']].max(axis=1)
+            cri_L = df['P_left']  * sev_L * (alpha*df['R_decel_left']  + beta*df['R_ttc_left']  + gamma*df['R_intent_left'])  * df['plr_mult_left']
+            cri_R = df['P_right'] * sev_R * (alpha*df['R_decel_right'] + beta*df['R_ttc_right'] + gamma*df['R_intent_right']) * df['plr_mult_right']
             cri_vals = pd.concat([cri_L.clip(0,1), cri_R.clip(0,1)], axis=1).max(axis=1)
             y_pred = (cri_vals >= Params.THETA_3).astype(int)
             

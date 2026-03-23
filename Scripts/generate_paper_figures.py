@@ -245,16 +245,30 @@ def fig_sensitivity_analysis():
         except Exception:
             print('⚠️  sensitivity_results.csv not found. Run sensitivity_analysis.py first.'); return
 
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    params_to_plot = ['SIGMA_GPS', 'PLR', 'TTC_CRIT', 'THETA_3', 'MU']
+    # Filter to only parameters present in the data
+    params_to_plot = [p for p in params_to_plot if p in df_sens['Parameter'].values]
+    n = len(params_to_plot)
+    if n <= 4:
+        fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    else:
+        fig, axes = plt.subplots(2, 3, figsize=(14, 8))
     axes = axes.flatten()
-    params_to_plot = ['SIGMA_GPS', 'PLR', 'TTC_CRIT', 'MU']
-    
+
     for ax, p in zip(axes, params_to_plot):
         sub_df = df_sens[df_sens['Parameter'] == p]
         if sub_df.empty: continue
+        label_map = {'SIGMA_GPS': r'$\sigma_{gps}$ (m)', 'PLR': r'$p_{G \to B}$',
+                     'TTC_CRIT': r'$TTC_{crit}$ (s)', 'THETA_3': r'$\theta_3$',
+                     'MU': r'$\mu$'}
         ax.plot(sub_df['Value'], sub_df['F1'], marker='o', lw=2, color=COLORS['math'])
-        ax.set(title=f'Sensitivity to {p}', xlabel=p, ylabel='F1 Score (CRITICAL)')
+        ax.set(title=f'Sensitivity to {label_map.get(p, p)}',
+               xlabel=label_map.get(p, p), ylabel='F1 Score (CRITICAL)')
         ax.grid(True, linestyle='--', alpha=0.6)
+
+    # Hide unused subplot axes
+    for i in range(len(params_to_plot), len(axes)):
+        axes[i].set_visible(False)
 
     fig.tight_layout()
     path = FIG_DIR / 'fig8_sensitivity_analysis.png'

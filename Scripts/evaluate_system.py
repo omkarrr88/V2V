@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score
 
 def main():
     print("Loading bsd_metrics.csv...")
@@ -56,6 +56,45 @@ def main():
         plt.plot(fpr_stat, tpr_stat, label=f'Static Box Baseline (AUC = {auc_stat:.4f})', color='red')
         print(f"Static Box Baseline AUC: {auc_stat:.4f}")
     
+    # ── Precision-Recall Analysis (critical for imbalanced datasets) ──
+    print("\n--- Precision-Recall Analysis ---")
+    ap_math = average_precision_score(y_true, math_cri)
+    print(f"Mathematical Model AUPRC: {ap_math:.4f}")
+    ap_ai = average_precision_score(y_true, ai_prob)
+    print(f"AI Hybrid Predictor AUPRC: {ap_ai:.4f}")
+    positive_rate = y_true.sum() / len(y_true)
+    print(f"Baseline (random) AUPRC: {positive_rate:.4f}")
+
+    # Generate PR curve plot
+    fig_pr, ax_pr = plt.subplots(figsize=(8, 6))
+    prec_math, rec_math, _ = precision_recall_curve(y_true, math_cri)
+    ax_pr.plot(rec_math, prec_math, label=f'Mathematical Model (AUPRC = {ap_math:.4f})', color='blue')
+    prec_ai, rec_ai, _ = precision_recall_curve(y_true, ai_prob)
+    ax_pr.plot(rec_ai, prec_ai, label=f'AI Hybrid Predictor (AUPRC = {ap_ai:.4f})', color='green')
+    ax_pr.axhline(y=positive_rate, color='k', linestyle='--', label=f'Random baseline ({positive_rate:.4f})')
+    ax_pr.set_xlabel('Recall')
+    ax_pr.set_ylabel('Precision')
+    ax_pr.set_title('Precision-Recall Curve')
+    ax_pr.legend(loc='upper right')
+    ax_pr.grid(True)
+    ax_pr.set_xlim([0.0, 1.0])
+    ax_pr.set_ylim([0.0, 1.05])
+    fig_pr.savefig('../Outputs/pr_curve.png', dpi=300)
+    print("Saved PR curve to ../Outputs/pr_curve.png")
+    plt.close(fig_pr)
+
+    # ── CRITICAL recall confidence interval (binomial) ──
+    y_pred_crit = (math_cri >= 0.80).astype(int)
+    n_pos = int(y_true.sum())
+    tp_crit = int(((y_pred_crit == 1) & (y_true == 1)).sum())
+    if n_pos > 0:
+        recall_crit = tp_crit / n_pos
+        from scipy.stats import binom
+        ci_lo = binom.ppf(0.025, n_pos, recall_crit) / n_pos if n_pos > 0 else 0
+        ci_hi = binom.ppf(0.975, n_pos, recall_crit) / n_pos if n_pos > 0 else 1
+        print(f"\nCRITICAL threshold (0.80) recall: {recall_crit:.3f}")
+        print(f"  95% binomial CI: [{ci_lo:.3f}, {ci_hi:.3f}] (n={n_pos})")
+
     print("\n--- ROC Summary ---")
     print("Generating ROC Curve plot...")
     

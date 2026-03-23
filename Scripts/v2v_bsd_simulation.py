@@ -143,10 +143,10 @@ MAP_CONFIGS = {
     },
     'intersection': {
         'cfg': '../Maps/intersection_tsv.sumocfg',
-        'net': '../Maps/intersection_tsv.net.xml',
+        'net': '../Maps/urban_intersection.net.xml',
     },
     'hilly': {
-        'cfg': '../Maps/hilly_road.sumocfg',
+        'cfg': '../Maps/hilly_v2v.sumocfg',
         'net': '../Maps/hilly_road.net.xml',
     },
 }
@@ -593,8 +593,6 @@ def main():
                 dsq = (ego.x - ts.x)**2 + (ego.y - ts.y)**2
                 if dsq <= COMM_RANGE**2:
                     neighbors[tv] = ts
-                    if dsq > 1600:
-                        continue
                     chan_key = (ego_vid, tv)
                     if chan_key not in channels:
                         if args.plr_g2b is not None:

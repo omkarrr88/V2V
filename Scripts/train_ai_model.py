@@ -116,9 +116,7 @@ def generate_critical_scenarios(n=300) -> pd.DataFrame:
         'speed': np.random.uniform(8, 20, n),
         'accel': np.random.uniform(0, 0.5, n),
         'decel': np.random.uniform(3, 8, n),
-        'yaw_rate': np.random.uniform(-0.1, 0.1, n),
         'num_targets': np.random.randint(1, 4, n),
-        'signals': 0,
         'max_gap': np.random.uniform(0.1, 0.8, n),
         'rel_speed': np.random.uniform(5, 15, n),
         'max_plr': np.random.uniform(0, 0.15, n),
@@ -131,13 +129,10 @@ def generate_critical_scenarios(n=300) -> pd.DataFrame:
     syn['speed_kmh'] = syn['speed'] * 3.6
     syn['abs_accel'] = syn['accel']
     syn['abs_net_accel'] = np.abs(syn['accel'] - syn['decel'])
-    syn['abs_yaw_rate'] = np.abs(syn['yaw_rate'])
     syn['is_braking'] = 1
-    syn['is_signaling'] = 0
     syn['has_targets'] = 1
     syn['speed_category'] = 1
     syn['closing_speed'] = syn['rel_speed']
-    syn['target_angle'] = 0.0
     syn['brake_ratio'] = syn['decel'] / np.maximum(syn['speed'], 0.1)
     syn['scenario_tsv'] = (syn['scenario_type'] == 'TSV').astype(int)
     syn['scenario_hnr'] = (syn['scenario_type'] == 'HNR').astype(int)
@@ -198,29 +193,34 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
     print("\n🔧 Engineering features...")
     df = add_derived_features(df)
     
-    # Inject synthetic critical scenarios
-    syn_df = generate_critical_scenarios(n=300)
-    df = pd.concat([df, syn_df], ignore_index=True)
-    
     y_raw = create_target_labels(df)
-    
+
     all_features = FEATURE_COLS + DERIVED_FEATURES
     available_features = [f for f in all_features if f in df.columns]
     X = df[available_features].copy()
     y = y_raw.copy()
-    
+
     print(f"   Features: {len(available_features)}")
     print(f"   Features: {available_features}")
     print(f"\n   Class distribution (labels from physics model intermediates):")
     label_names = {0: 'SAFE', 1: 'CAUTION', 2: 'WARNING', 3: 'CRITICAL'}
     for cls, count in y.value_counts().sort_index().items():
         print(f"     {label_names.get(cls, cls)}: {count}")
-    
+
     # ── Train/Test Split ──
     print("\n   Performing stratified train/test split...")
     X_train_raw, X_test, y_train_raw, y_test = train_test_split(
         X, y, test_size=0.25, random_state=42, stratify=y
     )
+
+    # Inject synthetic critical scenarios into TRAINING data only
+    syn_df = generate_critical_scenarios(n=300)
+    syn_df = add_derived_features(syn_df)
+    syn_y = create_target_labels(syn_df)
+    syn_X = syn_df[available_features].copy()
+    X_train_raw = pd.concat([X_train_raw, syn_X], ignore_index=True)
+    y_train_raw = pd.concat([y_train_raw, syn_y], ignore_index=True)
+    print(f"   Injected 300 synthetic CRITICAL rows into training partition only")
     
     # ── SMOTE Oversampling ──
     print("\n⚖️  Applying SMOTE for rare classes...")
@@ -241,7 +241,7 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
     sample_weights = y_train.map(class_weights).fillna(1.0)
     
     print(f"   Train size: {len(X_train)}")
-    print(f"   Test size: {len(X_test)} (Unbalanced true chronological)")
+    print(f"   Test size: {len(X_test)} (stratified holdout, no synthetic injection)")
     
     print("\n🚀 Training XGBoost classifier...")
     model = xgb.XGBClassifier(
@@ -347,7 +347,9 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
     import pathlib
     imp_records = sorted_imp
     imp_df = pd.DataFrame(imp_records, columns=['feature', 'importance'])
-    imp_path = pathlib.Path(__file__).parent.parent / 'Outputs' / 'feature_importance.csv'
+    # Use report_out_path base directory to avoid overwriting production CSV during tests
+    report_dir = pathlib.Path(report_out_path).parent
+    imp_path = report_dir / 'feature_importance.csv'
     imp_path.parent.mkdir(parents=True, exist_ok=True)
     imp_df.to_csv(imp_path, index=False)
     print(f"\n   Feature importances saved → {imp_path}")

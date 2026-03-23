@@ -754,13 +754,20 @@ class BSDEngine:
                 side_state.upgrade_counter = 0
                 side_state.pending_level = None
         elif raw_level.value < current.value:
-            # Check downgrade with hysteresis band
-            thresholds = [0, Params.THETA_1, Params.THETA_2, self.theta_3]
-            threshold = thresholds[current.value]
-            if cri < threshold - Params.DELTA_H:
+            # Downgrade with δ_h hysteresis band: CRI must drop below θ_k - δ_h
+            # to prevent alert flickering near threshold boundaries
+            downgrade_ok = True
+            if current == AlertLevel.CRITICAL and cri >= (self.theta_3 - Params.DELTA_H):
+                downgrade_ok = False
+            elif current == AlertLevel.WARNING and cri >= (Params.THETA_2 - Params.DELTA_H):
+                downgrade_ok = False
+            elif current == AlertLevel.CAUTION and cri >= (Params.THETA_1 - Params.DELTA_H):
+                downgrade_ok = False
+
+            if downgrade_ok:
                 side_state.current_level = raw_level
-            side_state.upgrade_counter = 0
-            side_state.pending_level = None
+                side_state.upgrade_counter = 0
+                side_state.pending_level = None
         else:
             # Same level — reset upgrade counter
             side_state.upgrade_counter = 0
