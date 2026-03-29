@@ -12,7 +12,7 @@
 
 This project implements a Vehicle-to-Vehicle (V2V) Blind Spot Detection system that uses only 5 fields from the SAE J2735 Basic Safety Message (BSM): position (x, y), speed, acceleration, and deceleration. The core physics engine computes a Collision Risk Index (CRI) using a multiplicative severity gate that suppresses false-positive accumulation from low-magnitude noise.
 
-The system was validated over 146,051 vehicle-pair observations on a 539-edge Atal Bridge road network (Navi Mumbai, India) using Eclipse SUMO, with injected Traffic Signal Violation (TSV) and Hilly Narrow Road (HNR) conflict scenarios. The physics model achieves an AUC of 0.9874 against a kinematic near-miss ground truth (2.27% positive rate). A complementary XGBoost classifier achieves 81.8% CRITICAL-class recall, providing dual-redundant detection.
+The system was validated over 146,051 vehicle-pair observations on a 539-edge Atal Bridge road network (Navi Mumbai, India) using Eclipse SUMO, with injected Traffic Signal Violation (TSV) and Hilly Narrow Road (HNR) conflict scenarios. The physics model achieves an AUC of 0.9869 against a kinematic near-miss ground truth (2.37% positive rate, 3,465 events). A complementary XGBoost classifier provides pattern-based backup detection for CAUTION and WARNING events.
 
 ---
 
@@ -87,7 +87,7 @@ graph TD
 
     subgraph "Layer 3: Intelligence Kernel"
         GPS --> Engine["BSD Engine V3.0\nCRI = P * max(R_d,R_t) * (aR_d+bR_t+gR_i) * PLR"]
-        GPS --> AI["XGBoost Classifier\n18 features | SMOTE | 81.8% CRIT recall"]
+        GPS --> AI["XGBoost Classifier\n15 features | SMOTE"]
         Eval["Evaluation\n(ROC/AUC, ablation)"] -. "model training" .-> AI
     end
 
@@ -219,11 +219,12 @@ The main simulation script `v2v_bsd_simulation.py` accepts the following argumen
 | :--- | :--- |
 | Total observations | 146,051 |
 | Unique target vehicles | 623 |
-| Physics model AUC | 0.9874 |
-| XGBoost hybrid AUC | 0.8191 |
-| XGBoost overall accuracy | 86.48% |
-| XGBoost CRITICAL recall | 81.8% |
-| Ground truth positive rate | 2.27% (3,314 events) |
+| Physics model AUC | 0.9869 |
+| XGBoost hybrid AUC | 0.7725 |
+| XGBoost overall accuracy | 80.66% |
+| XGBoost CAUTION recall | 65% |
+| XGBoost WARNING recall | 57% |
+| Ground truth positive rate | 2.37% (3,465 events) |
 | Normal scenario rows | 72,494 |
 | HNR scenario rows | 45,311 |
 | TSV scenario rows | 28,246 |
@@ -247,7 +248,7 @@ The `ros2_wgs84_wrapper.py` script provides a ROS2 node that converts WGS84 coor
 3. **Proxy ground truth**: The kinematic near-miss ground truth shares structural inputs with the CRI (position, speed, gap), which may inflate measured AUC. Real collision labels from instrumented vehicles would provide more rigorous evaluation.
 4. **Low-speed heading uncertainty**: Below 0.5 m/s, heading is held constant via dead reckoning because GPS jitter dominates position deltas.
 5. **No intent estimation**: Lane-change intent from lateral drift alone performs poorly without turn signal data; gamma is set to 0.00.
-6. **Sparse CRITICAL samples**: Only 354 CRITICAL events in the dataset, limiting AI model generalization for the highest-risk class.
+6. **Sparse CRITICAL samples**: Only 54 CRITICAL events in the dataset (CRI >= 0.80), limiting AI model generalization for the highest-risk class.
 7. **Homogeneous vehicle dynamics**: SUMO treats all vehicles identically within a type class; real vehicles have heterogeneous braking and acceleration profiles.
 8. **No adversarial robustness**: The system trusts all received BSM data at face value. Spoofed V2V messages could produce incorrect risk assessments. Misbehavior detection is not implemented.
 
@@ -273,7 +274,7 @@ To reproduce the published results from a clean clone:
 2. `pip install -r requirements.txt` (exact pinned versions)
 3. `cd Scripts && python v2v_bsd_simulation.py --no-gui --steps 3600 --seed 42`
    - Expected output: `Outputs/bsd_metrics.csv` with 146,051 rows
-4. `python evaluate_system.py` — generates ROC curves, computes AUC (expected: 0.9874)
+4. `python evaluate_system.py` — generates ROC curves, computes AUC (expected: 0.9869)
 5. `python train_ai_model.py` — trains XGBoost and regenerates `bsd_training_report.json` + `feature_importance.csv`
 6. `python generate_paper_figures.py` — regenerates all 9 publication figures
 7. `python fast_ablation.py` — reproduces ablation table (Table III in paper)

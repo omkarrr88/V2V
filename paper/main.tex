@@ -122,7 +122,7 @@ Each vehicle's data is packaged into a 5-field BSM. GPS noise (1.5~m uncertainty
 Received messages are processed by two parallel paths:
 \begin{itemize}
   \item \textbf{Physics model (primary):} Calculates the Collision Risk Index (CRI) using mathematical formulas based on vehicle positions, speeds, and braking distances.
-  \item \textbf{AI model (secondary):} An XGBoost classifier trained on 18 features derived from the BSM data, providing backup pattern detection.
+  \item \textbf{AI model (secondary):} An XGBoost classifier trained on 15 features derived from the BSM data, providing backup pattern detection.
 \end{itemize}
 
 \textbf{Layer~4 --- Analytics \& Presentation.}
@@ -185,12 +185,12 @@ On curves, the blind spot zone shifts laterally. A curvature correction adjusts 
 \end{equation}
 A target is considered to be in the blind spot if it falls within the lateral range defined by the ego vehicle's width, lane width, and a 0.5~m tolerance margin.
 
-The resulting CRI distribution (Fig.~\ref{fig:cri_dist}) confirms that the severity gate prevents excessive warnings, with 96.1\% of observations remaining in the SAFE region.
+The resulting CRI distribution (Fig.~\ref{fig:cri_dist}) confirms that the severity gate prevents excessive warnings, with 96.0\% of observations remaining in the SAFE region.
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.9\columnwidth]{fig2_cri_distribution.png}
-  \caption{CRI score distribution across 146,051 simulation timesteps. 96.1\% of observations are in the SAFE region (CRI~$<$~0.30), confirming the severity gate prevents excessive warnings.}
+  \caption{CRI score distribution across 146,051 simulation timesteps. 96.0\% of observations are in the SAFE region (CRI~$<$~0.30), confirming the severity gate prevents excessive warnings.}
   \label{fig:cri_dist}
 \end{figure}
 
@@ -244,7 +244,7 @@ The distributions of all three risk components across the simulation are shown i
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.9\columnwidth]{fig5_risk_components.png}
-  \caption{Distributions of the three CRI risk components. High-risk values are rare, consistent with the 2.27\% positive event rate in the simulation.}
+  \caption{Distributions of the three CRI risk components. High-risk values are rare, consistent with the 2.37\% positive event rate in the simulation.}
   \label{fig:risk_components}
 \end{figure}
 
@@ -375,7 +375,7 @@ The Atal Bridge network includes multi-lane roads, controlled intersections, and
 \end{table}
 
 \subsection{AI Model Configuration}
-The XGBoost classifier~\cite{chen2016xgboost} serves as a backup detection layer alongside the physics model. From the 5 BSM fields, 18 features are computed including speed, acceleration, braking status, gap distance, relative speed, and scenario indicators. Because dangerous events are rare (only 354 CRITICAL samples out of 146,051), SMOTE oversampling~\cite{smote2002} is used to balance the training data. The model uses 5-fold time-series cross-validation with a 75\%/25\% train/test split.
+The XGBoost classifier~\cite{chen2016xgboost} serves as a backup detection layer alongside the physics model. From the 5 BSM fields, 15 features are computed including speed, acceleration, braking status, gap distance, relative speed, and scenario indicators. Because dangerous events are rare (only 54 CRITICAL samples out of 146,051), SMOTE oversampling~\cite{smote2002} is used to balance the training data. The model uses 5-fold time-series cross-validation with a 75\%/25\% train/test split.
 
 % ============================================================
 % VII. RESULTS AND ANALYSIS
@@ -434,12 +434,12 @@ The XGBoost model achieves 80.8\% overall accuracy on the holdout test set. Beca
   \end{tabular}
 \end{table}
 
-Feature importance analysis (Fig.~\ref{fig:feat_imp}) shows that the most important features are braking dynamics (decel=0.33) and gap distance (max\_gap=0.14), while scenario labels receive negligible weight — indicating the model generalizes from physical behavior rather than memorizing specific scenarios.
+Feature importance analysis (Fig.~\ref{fig:feat_imp}) shows that the most important features are braking dynamics (decel=0.34) and gap distance (max\_gap=0.14). Scenario labels are excluded from the feature set entirely, ensuring the model generalizes from physical behavior rather than memorizing specific scenarios.
 
 \begin{figure}[htbp]
   \centering
  \includegraphics[width=\columnwidth]{fig3_feature_importance.png}
-  \caption{XGBoost feature importance. Deceleration and gap distance dominate, confirming the model relies on physical behavior rather than scenario labels.}
+  \caption{XGBoost feature importance (15 features). Deceleration and gap distance dominate. Scenario labels are excluded from the feature set.}
   \label{fig:feat_imp}
 \end{figure}
 
@@ -481,12 +481,12 @@ To understand how each component contributes to performance, five configurations
     \textbf{Config} & $\alpha$ & $\beta$ & $\gamma$ & \textbf{Lat TTC}
       & \textbf{F1 ($\theta$=0.60)} \\
     \midrule
-    A1 & 1.00 & 0.00 & 0.00 & $\times$ & 0.6338 \\
-    A2 & 0.50 & 0.50 & 0.00 & $\times$ & 0.5887 \\
-    A3 & 0.35 & 0.45 & 0.20 & $\times$ & 0.3281 \\
-    A4 & 0.35 & 0.45 & 0.20 & $\checkmark$ & 0.3281 \\
+    A1 & 1.00 & 0.00 & 0.00 & $\times$ & 0.6521 \\
+    A2 & 0.50 & 0.50 & 0.00 & $\times$ & 0.5829 \\
+    A3 & 0.35 & 0.45 & 0.20 & $\times$ & 0.3284 \\
+    A4 & 0.35 & 0.45 & 0.20 & $\checkmark$ & 0.3284 \\
     \textbf{A5} & \textbf{0.20} & \textbf{0.80} & \textbf{0.00}
-      & $\checkmark$ & \textbf{0.5888} \\
+      & $\checkmark$ & \textbf{0.5830} \\
     \bottomrule
   \end{tabular}
   \end{threeparttable}
@@ -547,7 +547,7 @@ The XGBoost model is exported in ONNX format for efficient embedded inference. T
 
 The main finding is that the transparent physics model (AUC~=~0.9869) significantly outperforms the machine learning model (AUC~=~0.7725) for blind-spot risk assessment, even though both use the same 5-field BSM input. The severity gate — requiring at least one physical danger signal to be genuinely high — is the key to this result. The ablation study confirms: removing the severity gate by adding the unreliable intent component ($\gamma=0.20$) reduces F1 by 44\%.
 
-The XGBoost model provides value as a pattern-based backup for CAUTION (65\% recall) and WARNING (57\% recall) detection, but fails on CRITICAL events due to extreme class rarity (only 54 samples in 146,051 observations). Its feature importance shows it relies on physical measurements rather than scenario labels, suggesting it can generalize with more training data.
+The XGBoost model provides value as a pattern-based backup for CAUTION (65\% recall) and WARNING (57\% recall) detection, but fails on CRITICAL events due to extreme class rarity (only 54 samples in 146,051 observations). Scenario labels are excluded from its feature set, and its importance rankings show it relies on physical measurements (braking, gap distance), suggesting it can generalize with more training data.
 
 The system maintains consistent performance across normal traffic, traffic signal violations, and narrow road scenarios ($\Delta$AUC~$<$~0.002), and across five independent random traffic seeds ($\sigma=0.0007$).
 

@@ -63,8 +63,6 @@ DERIVED_FEATURES = [
     'has_targets',     # num_targets > 0
     'speed_category',  # 0=slow, 1=medium, 2=fast
     'closing_speed',   # Equivalent to rel_speed
-    'scenario_tsv',    # 1 if in TSV scenario
-    'scenario_hnr',    # 1 if in HNR scenario
 ]
 
 # NOTE: yaw_rate and signals are no longer in FEATURE_COLS.
