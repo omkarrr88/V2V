@@ -46,7 +46,7 @@ def compute_ground_truth(df: pd.DataFrame,
 
     NOTE: The proxy shares structural similarity with CRI inputs (position,
     speed, gap). AUC values evaluated against this proxy should be
-    interpreted with this caveat. See PAPER_IEEE.md Section IX for discussion.
+    interpreted with this caveat. See paper/main.tex Section IX for discussion.
     """
     # Tier 1: SUMO collision flag (true ground truth, model-independent)
     if 'ground_truth_collision' in df.columns:

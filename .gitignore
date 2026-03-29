@@ -17,6 +17,7 @@ Outputs/bsd_xgboost_model.json
 Outputs/bsd_training_report.json
 Outputs/feature_importance.csv
 Outputs/roc_curve.png
+Outputs/pr_curve.png
 Outputs/sensitivity_results.csv
 Outputs/figures/
 
@@ -25,3 +26,6 @@ AUDIT_PROMPT.md
 AUDIT_PROMPT_V2.md
 FINAL_AUDIT_PROMPT.md
 ARCHITECTURE_FIGURE_SPEC.md
+_audit_figures.py
+audit_script.py
+verify_fixes.py

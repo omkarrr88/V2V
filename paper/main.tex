@@ -262,7 +262,7 @@ to find the time until the two vehicles would meet (TTC). The risk is:
       & \text{otherwise}
   \end{cases}
 \end{equation}
-A parallel calculation checks for side collisions using the lateral gap between vehicles. The combined TTC risk takes the higher of the two values.
+A parallel calculation checks for side collisions using the lateral gap between vehicles. For the lateral TTC component, a linear decay $1 - \mathrm{TTC}_{\mathrm{lat}}/\mathrm{TTC}_{\mathrm{crit}}$ is used rather than the quadratic form, as lateral closing speeds are typically lower. The combined TTC risk takes the higher of the two values.
 
 \subsection{Intent Risk ($R_{\mathrm{intent}}$)}
 Without turn signal data, the system tries to estimate whether the ego vehicle is drifting sideways toward another lane:
@@ -293,13 +293,20 @@ The system triggers four alert levels based on CRI:
 \end{itemize}
 To prevent alerts from flickering on and off, the system requires 3 consecutive steps above a threshold before upgrading, and a small buffer band (0.05) before downgrading. Left and right sides are monitored independently.
 
-Fig.~\ref{fig:alert_timeline} shows the alert activity over the full simulation.
+Fig.~\ref{fig:alert_timeline} shows the alert activity over the full simulation. Fig.~\ref{fig:cri_ts} illustrates the CRI time-series for a single vehicle pair, showing how the hysteresis mechanism prevents alert flickering during risk escalation and de-escalation.
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.9\columnwidth]{fig4_alert_timeline.png}
   \caption{Mean alert level over the 360-second simulation. Spikes correspond to injected danger scenarios (traffic signal violations and narrow road events).}
   \label{fig:alert_timeline}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig10_cri_timeseries.png}
+  \caption{CRI time-series for a single vehicle showing risk escalation and de-escalation. Horizontal lines indicate alert thresholds: CAUTION (0.30), WARNING (0.60), CRITICAL (0.80). The hysteresis requirement (3 consecutive steps) delays alert upgrades, preventing flicker.}
+  \label{fig:cri_ts}
 \end{figure}
 
 % ============================================================
@@ -335,7 +342,7 @@ The effect of these scenarios on risk levels is shown in Fig.~\ref{fig:scenario_
 \label{sec:setup}
 
 \subsection{Simulation Environment}
-All experiments use Eclipse SUMO~\cite{sumo2018} traffic simulator running at 10~Hz (10 updates per second). The road network is a 539-edge map of the Atal Bridge corridor in Navi Mumbai, India, extracted from OpenStreetMap. The simulation runs for 360 seconds with up to 163 simultaneous vehicles, producing 146,051 total observations. All system parameters are listed in Table~\ref{tab:params}.
+All experiments use Eclipse SUMO~\cite{sumo2018} traffic simulator running at 10~Hz (10 updates per second). The road network is a 539-edge map of the Atal Bridge corridor in Navi Mumbai, India, extracted from OpenStreetMap. The simulation runs for 360 seconds with up to 163 simultaneous vehicles, producing 146,051 total observations. All experiments use random seed 42 for reproducibility. All system parameters are listed in Table~\ref{tab:params}.
 
 \subsection{Road Network}
 The Atal Bridge network includes multi-lane roads, controlled intersections, and highway ramps — significantly more complex than the simple highway segments commonly used in V2V research. The simulated traffic models Indian conditions: high vehicle density, mixed vehicle types (sedans, SUVs, trucks), and frequent lane changes.
@@ -370,12 +377,14 @@ The Atal Bridge network includes multi-lane roads, controlled intersections, and
     Downgrade Band      & $\delta_h$                & 0.05 & --  & Oscillation guard \\
     Lateral Tolerance   & $\Delta W$                & 0.5  & m   & GPS/width margin \\
     Low-Speed Guard     & $v_{\min,\theta}$         & 0.5  & m/s & Heading hold threshold \\
+    Good$\to$Bad prob.  & $p_{G \to B}$             & 0.01 & --  & Gilbert-Elliott \cite{gilbert1960} \\
+    Bad$\to$Good prob.  & $p_{B \to G}$             & 0.10 & --  & Gilbert-Elliott \cite{gilbert1960} \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \subsection{AI Model Configuration}
-The XGBoost classifier~\cite{chen2016xgboost} serves as a backup detection layer alongside the physics model. From the 5 BSM fields, 15 features are computed including speed, acceleration, braking status, gap distance, relative speed, and scenario indicators. Because dangerous events are rare (only 54 CRITICAL samples out of 146,051), SMOTE oversampling~\cite{smote2002} is used to balance the training data. The model uses 5-fold time-series cross-validation with a 75\%/25\% train/test split.
+The XGBoost classifier~\cite{chen2016xgboost} serves as a backup detection layer alongside the physics model. From the 5 BSM fields, 15 features are computed including speed, acceleration, braking status, gap distance, and relative speed. Scenario labels are excluded from the feature set to ensure generalization. Because dangerous events are rare (only 54 CRITICAL samples out of 146,051), SMOTE oversampling~\cite{smote2002} is used to balance the training data. The model uses 5-fold time-series cross-validation with a 75\%/25\% train/test split.
 
 % ============================================================
 % VII. RESULTS AND ANALYSIS
@@ -406,7 +415,7 @@ The system was evaluated over 146,051 observations across three scenario types: 
 Since the simulation does not produce actual collision labels, a near-miss event is defined as ground truth: a positive event is flagged when a target is simultaneously in the blind spot, within 1.0~m gap or 2.0~s TTC, with relative speed above 0.5~m/s, and ego speed above 2.0~m/s. SUMO-reported physical collisions (27 events) are also treated as authoritative positives. This yields a positive rate of 2.37\% (3,465 events out of 146,051 observations).
 
 \subsection{ROC Analysis}
-Fig.~\ref{fig:roc} shows the ROC curves for all four methods. The V3.0 physics model achieves the highest AUC of 0.9869, showing strong ability to distinguish safe conditions from genuine blind-spot hazards. The XGBoost model achieves 0.7725 AUC. The physics model also achieves an AUPRC (Area Under Precision-Recall Curve) of 0.677, far above the random baseline of 0.024.
+Fig.~\ref{fig:roc} shows the ROC curves for all four methods. The V3.0 physics model achieves the highest AUC of 0.9869, showing strong ability to distinguish safe conditions from genuine blind-spot hazards. The XGBoost model achieves 0.7725 AUC. The physics model also achieves an AUPRC (Area Under Precision-Recall Curve) of 0.677, far above the random baseline of 0.024. The precision-recall perspective (Fig.~\ref{fig:pr}) is particularly informative given the 2.37\% positive rate, where ROC-AUC can be misleadingly optimistic.
 
 \begin{figure}[htbp]
   \centering
@@ -415,8 +424,15 @@ Fig.~\ref{fig:roc} shows the ROC curves for all four methods. The V3.0 physics m
   \label{fig:roc}
 \end{figure}
 
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig9_pr_curve.png}
+  \caption{Precision-Recall curve for the physics model (AUPRC=0.677). The dashed line shows the random baseline (positive rate = 0.024). PR curves are more informative than ROC for imbalanced datasets.}
+  \label{fig:pr}
+\end{figure}
+
 \subsection{AI Model Results}
-The XGBoost model achieves 80.8\% overall accuracy on the holdout test set. Because the dataset is 96\% SAFE-class, a trivial always-SAFE baseline would score higher; the model's value lies in detecting non-SAFE events. Table~\ref{tab:ai_perf} shows per-class performance. The model successfully detects CAUTION (65\% recall) and WARNING (57\% recall) events, but fails on the CRITICAL class (0\% recall) due to extreme rarity — only 13 CRITICAL test samples exist. The low precision for CAUTION (0.12) and WARNING (0.11) reflects inherent difficulty distinguishing intermediate risk levels; however, these errors are conservative (over-alerting rather than missed detections).
+The XGBoost model achieves 80.7\% overall accuracy on the holdout test set. Because the dataset is 96\% SAFE-class, a trivial always-SAFE baseline would score higher; the model's value lies in detecting non-SAFE events. Table~\ref{tab:ai_perf} shows per-class performance. The model successfully detects CAUTION (65\% recall) and WARNING (57\% recall) events, but fails on the CRITICAL class (0\% recall) due to extreme rarity — only 13 CRITICAL test samples exist. This failure is systematic: cross-validation also yields 0\% CRITICAL recall across all five folds, confirming insufficient training samples rather than a statistical anomaly. The low precision for CAUTION (0.12) and WARNING (0.11) reflects inherent difficulty distinguishing intermediate risk levels; however, these errors are conservative (over-alerting rather than missed detections). The confusion matrix (Fig.~\ref{fig:confusion}) visualizes this pattern.
 
 \begin{table}[htbp]
   \caption{AI Model Class Performance}
@@ -426,7 +442,7 @@ The XGBoost model achieves 80.8\% overall accuracy on the holdout test set. Beca
     \toprule
     \textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{Support} \\
     \midrule
-    SAFE     & 1.00        & 0.82        & 0.90        & 35,047 \\
+    SAFE     & 0.99        & 0.82        & 0.90        & 35,047 \\
     CAUTION  & 0.12        & 0.65        & 0.20        & 907    \\
     WARNING  & 0.11        & 0.57        & 0.18        & 546    \\
     CRITICAL & 0.00        & 0.00        & 0.00        & 13     \\
@@ -434,13 +450,20 @@ The XGBoost model achieves 80.8\% overall accuracy on the holdout test set. Beca
   \end{tabular}
 \end{table}
 
-Feature importance analysis (Fig.~\ref{fig:feat_imp}) shows that the most important features are braking dynamics (decel=0.34) and gap distance (max\_gap=0.14). Scenario labels are excluded from the feature set entirely, ensuring the model generalizes from physical behavior rather than memorizing specific scenarios.
+Feature importance analysis (Fig.~\ref{fig:feat_imp}) shows that the most important features are braking dynamics (decel=0.34) and gap distance (max\_gap=0.14). Scenario labels are excluded from the feature set entirely, ensuring the model generalizes from physical behavior rather than memorizing specific scenarios. The feature correlation matrix (Fig.~\ref{fig:feat_corr}) reveals moderate redundancy between derived features (e.g., speed and speed\_kmh), suggesting future feature set reduction.
 
 \begin{figure}[htbp]
   \centering
  \includegraphics[width=\columnwidth]{fig3_feature_importance.png}
   \caption{XGBoost feature importance (15 features). Deceleration and gap distance dominate. Scenario labels are excluded from the feature set.}
   \label{fig:feat_imp}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig12_feature_correlation.png}
+  \caption{Feature correlation heatmap. Notable redundancies include speed/speed\_kmh ($r=1.0$) and rel\_speed/closing\_speed ($r=1.0$), suggesting potential for feature set reduction.}
+  \label{fig:feat_corr}
 \end{figure}
 
 \begin{figure}[htbp]
@@ -468,8 +491,26 @@ To verify the system works across different hazard types, AUC was computed separ
   \end{tabular}
 \end{table}
 
+Fig.~\ref{fig:speed_cri} shows the relationship between ego vehicle speed and CRI across scenarios. Higher speeds generally produce higher CRI values, with HNR scenarios showing elevated risk at lower speeds due to reduced friction.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig13_speed_cri_scatter.png}
+  \caption{Ego speed vs.\ maximum CRI, colored by scenario type (5,000 sampled rows). HNR scenarios show elevated risk at lower speeds due to reduced friction and narrow lanes.}
+  \label{fig:speed_cri}
+\end{figure}
+
+Fig.~\ref{fig:calibration} shows the calibration plot, assessing whether CRI scores correspond to actual danger frequencies.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{fig11_calibration.png}
+  \caption{Calibration plot: predicted CRI vs.\ observed positive fraction. The proxy ground truth uses kinematic near-miss events (2.37\% positive rate).}
+  \label{fig:calibration}
+\end{figure}
+
 \subsection{Ablation Study}
-To understand how each component contributes to performance, five configurations were tested with different weight settings (Table~\ref{tab:ablation}). The key finding is that including the intent component ($\gamma=0.20$, configs A3/A4) without turn signal data causes a 44\% drop in F1 score, validating the decision to disable it ($\gamma=0$).
+To understand how each component contributes to performance, five configurations were tested with different weight settings (Table~\ref{tab:ablation}). The key finding is that including the intent component ($\gamma=0.20$, configs A3/A4) without turn signal data causes a 44\% drop in F1 score, validating the decision to disable it ($\gamma=0$). Configurations A3 and A4 produce identical F1 because the lateral TTC component contributes negligible additional risk when the intent weight ($\gamma=0.20$) already dominates the score reduction.
 
 \begin{table}[htbp]
   \caption{Ablation Study Results (3,600 steps)}
@@ -521,6 +562,7 @@ To confirm results are not dependent on a single random traffic pattern, the sim
     \footnotesize
     \item AUC is threshold-independent and serves as the primary evaluation metric.
     Low variance ($\sigma{=}0.0007$) confirms stability across traffic seeds.
+    Raw per-seed data available in \texttt{Outputs/multi\_seed\_results.csv}.
   \end{tablenotes}
   \end{threeparttable}
 \end{table}
@@ -662,11 +704,6 @@ N.~Chawla, K.~Bowyer, L.~Hall, and W.~Kegelmeyer, ``SMOTE: Synthetic
 minority over-sampling technique,'' \textit{Journal of Artificial
 Intelligence Research}, vol.~16, pp.~321--357, Jun.\ 2002.
 
-\bibitem{saito2015}
-T.~Saito and M.~Rehmsmeier, ``The precision-recall plot is more informative
-than the ROC plot when evaluating binary classifiers on imbalanced
-datasets,'' \textit{PLoS ONE}, vol.~10, no.~3, p.~e0118432, Mar.\ 2015.
-
 \bibitem{kim2015}
 B.~Kim, K.~Yi, H.-J.~Yoo, H.-J.~Chong, and B.~Ko, ``An IMM/EKF approach
 for enhanced multitarget state estimation for application to integrated
@@ -677,12 +714,6 @@ no.~3, pp.~876--889, Mar.\ 2015.
 Z.~A. Rawashdeh and S.~M.~I. Mahmud, ``A novel V2V-based blind spot
 detection system,'' in \textit{Proc.\ IEEE 68th Veh.\ Technol.\ Conf.\
 (VTC-Fall)}, Calgary, AB, Canada, Sep.\ 2008, pp.~1--5.
-
-\bibitem{tan2006}
-H.-S. Tan and J.~Huang, ``DGPS-based vehicle-to-vehicle cooperative
-collision warning: Engineering feasibility viewpoints,'' \textit{IEEE
-Trans.\ Intell.\ Transp.\ Syst.}, vol.~7, no.~4, pp.~415--428, Dec.\
-2006.
 
 \end{thebibliography}
 

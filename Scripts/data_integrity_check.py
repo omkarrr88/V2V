@@ -13,6 +13,10 @@ import os
 import sys
 import pandas as pd
 
+# Fix Windows console encoding for emoji output
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 def main():
     report_path = os.path.join('..', 'Outputs', 'bsd_training_report.json')
     csv_path = os.path.join('..', 'Outputs', 'feature_importance.csv')

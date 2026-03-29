@@ -46,11 +46,21 @@ def main():
     
     print("| Config | α | β | γ | Lat TTC | F1 (θ=0.60) | F1 (θ=0.80) |")
     print("|--------|------|------|------|---------|-------------|-------------|")
+    rows = []
     for name, a, b, g, l in configs:
         f60, f80 = evaluate_config(df, y_true, a, b, g, l)
-        
+
         lt = '✓' if l else '✗'
         print(f"| {name} | {a:.2f} | {b:.2f} | {g:.2f} | {lt} | {f60:.4f} | {f80:.4f} |")
+        rows.append({'config': name, 'alpha': a, 'beta': b, 'gamma': g,
+                      'lat_ttc': l, 'f1_060': round(f60, 4), 'f1_080': round(f80, 4)})
+
+    # Save results
+    import os
+    out_dir = os.path.join(os.path.dirname(__file__), '..', 'Outputs')
+    out_path = os.path.join(out_dir, 'ablation_results.csv')
+    pd.DataFrame(rows).to_csv(out_path, index=False)
+    print(f"\nAblation results saved to {out_path}")
 
 if __name__ == '__main__':
     main()

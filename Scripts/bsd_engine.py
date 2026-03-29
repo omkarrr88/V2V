@@ -410,10 +410,24 @@ class BSDEngine:
         Uses scenario-aware W_LANE.
         """
         sigma = self.sigma_gps
+        if sigma <= 0:
+            # Degenerate case: no GPS uncertainty — binary in/out of zone
+            half_w = ego.width / 2.0
+            L_bs = self._compute_L_bs(ego.speed)
+            w_lane = self.active_w_lane
+            if x_hat >= 0:
+                inside_x = half_w <= x_hat <= half_w + w_lane
+            else:
+                inside_x = -(half_w + w_lane) <= x_hat <= -half_w
+            y_front = ego.length / 2.0
+            y_rear = -L_bs
+            inside_y = y_rear <= y_hat <= y_front
+            return 1.0 if (inside_x and inside_y) else 0.0
+
         half_w = ego.width / 2.0
         L_bs = self._compute_L_bs(ego.speed)
         w_lane = self.active_w_lane
-        
+
         if x_hat >= 0:
             x_inner = half_w
             x_outer = half_w + w_lane

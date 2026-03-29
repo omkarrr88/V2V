@@ -33,8 +33,8 @@ The system was validated over 146,051 vehicle-pair observations on a 539-edge At
 
 1. Clone the repository:
     ```bash
-    git clone <repository-url>
-    cd V2V-BSD
+    git clone https://github.com/omkarrr88/V2V.git
+    cd V2V
     ```
 2. Create and activate a virtual environment:
     ```bash
@@ -174,6 +174,8 @@ Left and right blind spot zones are scored independently. Alert upgrades require
 | `bsd_xgboost_model.json` | Trained XGBoost model weights |
 | `bsd_training_report.json` | AI model training metrics and classification report |
 | `feature_importance.csv` | XGBoost feature importance rankings |
+| `sensitivity_results.csv` | Sensitivity analysis results across parameter variations |
+| `ablation_results.csv` | Ablation study results for different weight configurations |
 | `figures/` | Generated publication figures (PNG, 300 DPI) |
 | **`paper/`** | |
 | `main.tex` | IEEE conference paper (LaTeX source) |
@@ -224,6 +226,7 @@ The main simulation script `v2v_bsd_simulation.py` accepts the following argumen
 | XGBoost overall accuracy | 80.66% |
 | XGBoost CAUTION recall | 65% |
 | XGBoost WARNING recall | 57% |
+| XGBoost CRITICAL recall | 0% (13 test samples) |
 | Ground truth positive rate | 2.37% (3,465 events) |
 | Normal scenario rows | 72,494 |
 | HNR scenario rows | 45,311 |

@@ -105,7 +105,15 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def generate_critical_scenarios(n=300) -> pd.DataFrame:
-    """Generate synthetic near-collision rows for the rare CRITICAL class to aid modeling."""
+    """Generate synthetic near-collision rows for the rare CRITICAL class to aid modeling.
+
+    NOTE: These synthetic CRITICAL samples use hardcoded uniform distributions
+    that may not match real CRITICAL event patterns from SUMO. Despite injection
+    of 300 synthetic samples, CRITICAL recall remains 0.0% — suggesting the
+    synthetic distributions do not capture real dangerous-event characteristics.
+    Future work: use targeted scenario injection in SUMO to generate organic
+    CRITICAL training data.
+    """
     np.random.seed(42)
     syn = pd.DataFrame({
         'speed': np.random.uniform(8, 20, n),

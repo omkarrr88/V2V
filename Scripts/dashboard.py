@@ -130,8 +130,9 @@ def alert_color(alert: str) -> str:
     return C.get(str(alert).upper(), '#64748b')
 
 def get_params_safe(raw_dict):
-    """Normalize parameter keys to uppercase and provide defaults."""
-    defaults = {"ALPHA": 0.20, "BETA": 0.80, "GAMMA": 0.00, "THETA_3": 0.8}
+    """Normalize parameter keys to uppercase and provide defaults from Params class."""
+    from bsd_engine import Params
+    defaults = {"ALPHA": Params.ALPHA, "BETA": Params.BETA, "GAMMA": Params.GAMMA, "THETA_3": Params.THETA_3}
     if not isinstance(raw_dict, dict): return defaults
     norm = {str(k).upper(): v for k, v in raw_dict.items()}
     # Fill missing from defaults
@@ -167,7 +168,9 @@ def load_metrics_df():
 # ============================================================
 if "mode" not in st.session_state: st.session_state.mode = "LIVE Tracking"
 if "sandbox" not in st.session_state: st.session_state.sandbox = False
-if "sandbox_weights" not in st.session_state: st.session_state.sandbox_weights = {"ALPHA": 0.20, "BETA": 0.80, "GAMMA": 0.00}
+if "sandbox_weights" not in st.session_state:
+    from bsd_engine import Params as _P
+    st.session_state.sandbox_weights = {"ALPHA": _P.ALPHA, "BETA": _P.BETA, "GAMMA": _P.GAMMA}
 if "frozen_data" not in st.session_state: st.session_state.frozen_data = None
 if "cached_vids" not in st.session_state: st.session_state.cached_vids = []
 

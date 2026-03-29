@@ -305,6 +305,14 @@ def main():
     fig_confusion_matrix(df)
     fig_sensitivity_analysis()
 
+    # New figures (9-14)
+    fig_pr_curve(df)
+    fig_cri_timeseries(df)
+    fig_calibration(df)
+    fig_feature_correlation(df)
+    fig_speed_cri_scatter(df)
+    fig_component_correlation(df)
+
     print(f'\n✅ All figures saved to {FIG_DIR}')
     print('   fig1_roc_curve.png              — ROC comparison')
     print('   fig2_cri_distribution.png       — CRI distribution')
@@ -314,6 +322,183 @@ def main():
     print('   fig6_scenario_comparison.png    — Scenario CRI timeseries')
     print('   fig7_confusion_matrix.png       — Confusion Matrix')
     print('   fig8_sensitivity_analysis.png   — Sensitivity Analysis grids')
+    print('   fig9_pr_curve.png               — Precision-Recall curve')
+    print('   fig10_cri_timeseries.png        — CRI time-series example')
+    print('   fig11_calibration.png           — Calibration plot')
+    print('   fig12_feature_correlation.png   — Feature correlation heatmap')
+    print('   fig13_speed_cri_scatter.png     — Speed vs CRI scatter')
+    print('   fig14_component_correlation.png — Risk component correlation')
+
+
+def fig_pr_curve(df):
+    """Fig 9: Precision-Recall curve."""
+    from sklearn.metrics import precision_recall_curve, average_precision_score
+    y_true = compute_ground_truth(df)
+    cri_max = df[['cri_left', 'cri_right']].max(axis=1)
+    precision, recall, _ = precision_recall_curve(y_true, cri_max)
+    auprc = average_precision_score(y_true, cri_max)
+    pos_rate = y_true.mean()
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.plot(recall, precision, 'b-', lw=2, label=f'Physics CRI (AUPRC={auprc:.3f})')
+    ax.axhline(y=pos_rate, color='gray', linestyle='--', lw=1, label=f'Random baseline ({pos_rate:.3f})')
+    ax.set_xlabel('Recall', fontsize=13)
+    ax.set_ylabel('Precision', fontsize=13)
+    ax.set_title('Precision-Recall Curve', fontsize=14)
+    ax.legend(fontsize=11)
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1])
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / 'fig9_pr_curve.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print('   fig9_pr_curve.png generated')
+
+
+def fig_cri_timeseries(df):
+    """Fig 10: CRI time-series for a single vehicle with alert events."""
+    # Find a vehicle with WARNING or CRITICAL alerts
+    candidates = df[df['alert_left'].isin(['WARNING', 'CRITICAL']) |
+                    df['alert_right'].isin(['WARNING', 'CRITICAL'])]
+    if len(candidates) == 0:
+        candidates = df[df['alert_left'].isin(['CAUTION', 'WARNING']) |
+                        df['alert_right'].isin(['CAUTION', 'WARNING'])]
+    if len(candidates) == 0:
+        print('   fig10: no interesting vehicle found, skipping')
+        return
+
+    vid = candidates['ego_vid'].value_counts().idxmax()
+    vdf = df[df['ego_vid'] == vid].sort_values('step')
+    cri_max = vdf[['cri_left', 'cri_right']].max(axis=1)
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.axhspan(0, 0.30, alpha=0.1, color='green')
+    ax.axhspan(0.30, 0.60, alpha=0.1, color='gold')
+    ax.axhspan(0.60, 0.80, alpha=0.1, color='orange')
+    ax.axhspan(0.80, 1.0, alpha=0.1, color='red')
+    ax.plot(vdf['step'], cri_max, 'b-', lw=1.2)
+    for thr, lbl in [(0.30, 'CAUTION'), (0.60, 'WARNING'), (0.80, 'CRITICAL')]:
+        ax.axhline(y=thr, color='gray', linestyle=':', lw=0.8, alpha=0.7)
+    ax.set_xlabel('Simulation Step', fontsize=13)
+    ax.set_ylabel('CRI', fontsize=13)
+    ax.set_title(f'CRI Time-Series for Vehicle {vid}', fontsize=14)
+    ax.set_ylim([0, min(1.0, cri_max.max() * 1.2 + 0.05)])
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / 'fig10_cri_timeseries.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print('   fig10_cri_timeseries.png generated')
+
+
+def fig_calibration(df):
+    """Fig 11: Calibration plot (reliability diagram)."""
+    from sklearn.calibration import calibration_curve
+    y_true = compute_ground_truth(df)
+    cri_max = df[['cri_left', 'cri_right']].max(axis=1)
+    prob_true, prob_pred = calibration_curve(y_true, cri_max, n_bins=10, strategy='uniform')
+
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.plot([0, 1], [0, 1], 'k--', lw=1, label='Perfect calibration')
+    ax.plot(prob_pred, prob_true, 'bo-', lw=2, markersize=6, label='Physics CRI')
+    ax.set_xlabel('Mean Predicted CRI', fontsize=13)
+    ax.set_ylabel('Fraction of Positives', fontsize=13)
+    ax.set_title('Calibration Plot', fontsize=14)
+    ax.legend(fontsize=11)
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1])
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / 'fig11_calibration.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print('   fig11_calibration.png generated')
+
+
+def fig_feature_correlation(df):
+    """Fig 12: Feature correlation heatmap."""
+    feat_cols = ['speed', 'accel', 'decel', 'num_targets', 'max_gap', 'rel_speed',
+                 'max_plr', 'k_lost_max']
+    available = [c for c in feat_cols if c in df.columns]
+    dff = df[available].copy()
+    dff['speed_kmh'] = dff['speed'] * 3.6
+    dff['abs_accel'] = (dff['accel'] - dff['decel']).abs()
+    dff['is_braking'] = (dff['decel'] > 1.0).astype(int)
+    dff['brake_ratio'] = dff['decel'] / dff['speed'].clip(lower=0.1)
+    dff['has_targets'] = (dff['num_targets'] > 0).astype(int)
+    dff['closing_speed'] = dff['rel_speed']
+
+    corr = dff.corr()
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(corr, cmap='RdBu_r', vmin=-1, vmax=1, aspect='auto')
+    ax.set_xticks(range(len(corr.columns)))
+    ax.set_yticks(range(len(corr.columns)))
+    ax.set_xticklabels(corr.columns, rotation=45, ha='right', fontsize=9)
+    ax.set_yticklabels(corr.columns, fontsize=9)
+    for i in range(len(corr)):
+        for j in range(len(corr)):
+            val = corr.iloc[i, j]
+            color = 'white' if abs(val) > 0.6 else 'black'
+            ax.text(j, i, f'{val:.2f}', ha='center', va='center', fontsize=7, color=color)
+    fig.colorbar(im, ax=ax, shrink=0.8)
+    ax.set_title('Feature Correlation Matrix', fontsize=14)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / 'fig12_feature_correlation.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print('   fig12_feature_correlation.png generated')
+
+
+def fig_speed_cri_scatter(df):
+    """Fig 13: Speed vs CRI scatter by scenario."""
+    sample = df.sample(n=min(5000, len(df)), random_state=42)
+    cri_max = sample[['cri_left', 'cri_right']].max(axis=1)
+    colors = {'normal': '#4285F4', 'HNR': '#EA4335', 'TSV': '#34A853'}
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for scenario, color in colors.items():
+        mask = sample['scenario_type'] == scenario
+        ax.scatter(sample.loc[mask, 'speed'], cri_max[mask],
+                   c=color, alpha=0.3, s=8, label=scenario)
+    ax.set_xlabel('Ego Speed (m/s)', fontsize=13)
+    ax.set_ylabel('max(CRI_left, CRI_right)', fontsize=13)
+    ax.set_title('Speed vs CRI by Scenario', fontsize=14)
+    ax.legend(fontsize=11, markerscale=3)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / 'fig13_speed_cri_scatter.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print('   fig13_speed_cri_scatter.png generated')
+
+
+def fig_component_correlation(df):
+    """Fig 14: CRI risk component correlation matrix."""
+    comp_df = pd.DataFrame()
+    for comp in ['R_decel', 'R_ttc', 'R_intent']:
+        left = f'{comp}_left'
+        right = f'{comp}_right'
+        if left in df.columns and right in df.columns:
+            comp_df[comp] = df[[left, right]].max(axis=1)
+
+    if len(comp_df.columns) < 2:
+        print('   fig14: insufficient component columns, skipping')
+        return
+
+    # Filter to rows with any risk > 0
+    has_risk = (comp_df > 0).any(axis=1)
+    comp_df = comp_df[has_risk]
+
+    corr = comp_df.corr()
+    fig, ax = plt.subplots(figsize=(5, 4))
+    im = ax.imshow(corr, cmap='RdBu_r', vmin=-1, vmax=1)
+    ax.set_xticks(range(len(corr.columns)))
+    ax.set_yticks(range(len(corr.columns)))
+    ax.set_xticklabels(corr.columns, fontsize=11)
+    ax.set_yticklabels(corr.columns, fontsize=11)
+    for i in range(len(corr)):
+        for j in range(len(corr)):
+            val = corr.iloc[i, j]
+            color = 'white' if abs(val) > 0.6 else 'black'
+            ax.text(j, i, f'{val:.3f}', ha='center', va='center', fontsize=12, color=color)
+    fig.colorbar(im, ax=ax, shrink=0.8)
+    ax.set_title('Risk Component Correlation', fontsize=14)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / 'fig14_component_correlation.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print('   fig14_component_correlation.png generated')
 
 
 if __name__ == '__main__':
