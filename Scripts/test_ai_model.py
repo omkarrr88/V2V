@@ -42,7 +42,6 @@ assert len(y) == N, "Labels length mismatch"
 # Verify derived features exist
 assert 'abs_accel' in df_synth.columns, "abs_accel derived feature missing"
 assert 'brake_ratio' in df_synth.columns, "brake_ratio derived feature missing"
-assert 'abs_net_accel' in df_synth.columns, "abs_net_accel derived feature missing"
 assert 'scenario_tsv' in df_synth.columns, "scenario_tsv derived feature missing"
 assert 'scenario_hnr' in df_synth.columns, "scenario_hnr derived feature missing"
 print(f"  ✅ All derived features present")
@@ -81,13 +80,13 @@ rows = [
     {'speed': 25, 'accel': 2.0, 'decel': 0, 'num_targets': 1,
      'max_gap': 3.0, 'rel_speed': 5.0, 'max_plr': 0.05, 'k_lost_max': 0,
      'speed_kmh': 90, 'abs_accel': 2.0, 'is_braking': 0,
-     'brake_ratio': 0.0, 'abs_net_accel': 2.0,
+     'brake_ratio': 0.0,
      'has_targets': 1, 'speed_category': 2, 'closing_speed': 5.0,
      'scenario_tsv': 0, 'scenario_hnr': 0},
     {'speed': 5, 'accel': 0, 'decel': 2, 'num_targets': 0,
      'max_gap': 50, 'rel_speed': 0.1, 'max_plr': 0, 'k_lost_max': 0,
      'speed_kmh': 18, 'abs_accel': 2, 'is_braking': 1,
-     'brake_ratio': 0.4, 'abs_net_accel': 2.0,
+     'brake_ratio': 0.4,
      'has_targets': 0, 'speed_category': 1, 'closing_speed': 0.1,
      'scenario_tsv': 0, 'scenario_hnr': 0},
 ]

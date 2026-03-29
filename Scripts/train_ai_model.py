@@ -29,8 +29,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 # ML Libraries
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report
 import xgboost as xgb
 from joblib import dump, load
 
@@ -61,7 +60,6 @@ DERIVED_FEATURES = [
     'abs_accel',       # |net_acceleration| = |accel - decel|
     'is_braking',      # decel > 1.0
     'brake_ratio',     # decel / max(speed, 0.1)
-    'abs_net_accel',   # |accel - decel|
     'has_targets',     # num_targets > 0
     'speed_category',  # 0=slow, 1=medium, 2=fast
     'closing_speed',   # Equivalent to rel_speed
@@ -92,7 +90,6 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     df['abs_accel'] = net_accel.abs()
     df['is_braking'] = (df['decel'] > 1.0).astype(int)
     df['brake_ratio'] = df['decel'] / df['speed'].clip(lower=0.1)
-    df['abs_net_accel'] = net_accel.abs()
     df['has_targets'] = (df['num_targets'] > 0).astype(int)
     df['speed_category'] = pd.cut(df['speed'], bins=[-1, 5, 20, 100], labels=[0, 1, 2]).astype(int)
     if 'rel_speed' in df.columns:
@@ -128,7 +125,6 @@ def generate_critical_scenarios(n=300) -> pd.DataFrame:
     # Basic derived features
     syn['speed_kmh'] = syn['speed'] * 3.6
     syn['abs_accel'] = syn['accel']
-    syn['abs_net_accel'] = np.abs(syn['accel'] - syn['decel'])
     syn['is_braking'] = 1
     syn['has_targets'] = 1
     syn['speed_category'] = 1
@@ -344,11 +340,10 @@ def train_model(df=None, model_out_path=MODEL_FILE, report_out_path=REPORT_FILE)
         bar = '█' * int(imp * 50)
         print(f"   {feat:20s} {imp:.4f} {bar}")
         
-    import pathlib
     imp_records = sorted_imp
     imp_df = pd.DataFrame(imp_records, columns=['feature', 'importance'])
     # Use report_out_path base directory to avoid overwriting production CSV during tests
-    report_dir = pathlib.Path(report_out_path).parent
+    report_dir = Path(report_out_path).parent
     imp_path = report_dir / 'feature_importance.csv'
     imp_path.parent.mkdir(parents=True, exist_ok=True)
     imp_df.to_csv(imp_path, index=False)
@@ -452,7 +447,6 @@ class BSDPredictor:
             'closing_speed': rel_speed,
             'target_angle': target_angle,
             'brake_ratio': decel / max(speed, 0.1),
-            'abs_net_accel': abs(net_accel),
             'scenario_tsv': 0,
             'scenario_hnr': 0,
         }
@@ -509,7 +503,6 @@ class BSDPredictor:
                     'closing_speed': r.get('rel_speed', 0.0),
                     'target_angle': r.get('target_angle', 0.0),
                     'brake_ratio': d / max(s, 0.1),
-                    'abs_net_accel': abs(net_a),
                     'scenario_tsv': r.get('scenario_tsv', 0),
                     'scenario_hnr': r.get('scenario_hnr', 0),
                 })

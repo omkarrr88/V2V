@@ -207,29 +207,39 @@ def fig_scenario_comparison(df):
     print(f'✅ Saved: {path}')
 
 
-# ── Figure 7: Confusion Matrix ───────────────────────────────────────────────
+# ── Figure 7: Confusion Matrix (XGBoost 4-Class) ────────────────────────────
 def fig_confusion_matrix(df):
     from sklearn.metrics import confusion_matrix
     import seaborn as sns
 
-    if 'ai_critical_prob' not in df.columns:
-        print('⚠️  ai_critical_prob missing from bsd_metrics.csv — skipping confusion matrix'); return
+    if 'ai_alert' not in df.columns:
+        print('⚠️  ai_alert column missing from bsd_metrics.csv — skipping confusion matrix'); return
 
-    # We evaluate AI thresholding to max class
-    # The true states:
-    y_true = compute_ground_truth(df)
+    # True labels from physics model CRI thresholds (what the AI is trained to replicate)
+    cri_max = df[['cri_left', 'cri_right']].max(axis=1)
+    y_true = pd.Series(0, index=df.index)
+    y_true[cri_max >= Params.THETA_1] = 1  # CAUTION
+    y_true[cri_max >= Params.THETA_2] = 2  # WARNING
+    y_true[cri_max >= Params.THETA_3] = 3  # CRITICAL
 
-    # Simplified confusion logic matching the CRITICAL intent
-    # y_pred_class is 0,1,2,3 from the report map: SAFE=0, CAUTION=1, WARNING=2, CRITICAL=3
-    # Actually, we can just use y_true and the math model for now:
-    y_pred = (df[['cri_left', 'cri_right']].max(axis=1) >= Params.THETA_3).astype(int)
-    cm = confusion_matrix(y_true, y_pred)
-    
-    fig, ax = plt.subplots(figsize=(5, 4))
+    # Predicted labels from XGBoost ai_alert column
+    alert_map = {'SAFE': 0, 'CAUTION': 1, 'WARNING': 2, 'CRITICAL': 3}
+    valid_mask = df['ai_alert'].isin(alert_map.keys())
+    if valid_mask.sum() == 0:
+        print('⚠️  No valid AI predictions in ai_alert column — skipping confusion matrix'); return
+
+    y_pred = df.loc[valid_mask, 'ai_alert'].map(alert_map)
+    y_true = y_true[valid_mask]
+
+    labels = [0, 1, 2, 3]
+    label_names = ['SAFE', 'CAUTION', 'WARNING', 'CRITICAL']
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False, ax=ax,
-                xticklabels=['Negative', 'Positive'], yticklabels=['Negative', 'Positive'])
-    ax.set(xlabel='Predicted Label (CRI ≥ 0.80)', ylabel='True Label (Proxy)',
-           title='Physics Engine Confusion Matrix (CRITICAL)')
+                xticklabels=label_names, yticklabels=label_names)
+    ax.set(xlabel='Predicted (XGBoost)', ylabel='True (Physics CRI)',
+           title='XGBoost 4-Class Confusion Matrix')
     path = FIG_DIR / 'fig7_confusion_matrix.png'
     fig.savefig(path, dpi=300, bbox_inches='tight')
     plt.close(fig)

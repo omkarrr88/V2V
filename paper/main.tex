@@ -49,7 +49,7 @@ Accident Prevention Using Severity-Gated Collision Risk Indexing}
 % ABSTRACT
 % ============================================================
 \begin{abstract}
-Blind spot accidents during lane changes are a major cause of urban traffic collisions. Current driver-assistance systems using radar or cameras fail when other vehicles block the line of sight. This paper presents a Vehicle-to-Vehicle (V2V) Blind Spot Detection system that uses wireless communication between vehicles to detect nearby cars even when they cannot be seen. Our system uses only 5 basic data fields from the standard vehicle safety message (position, speed, acceleration, and braking) — far fewer than the 13 fields required by previous systems. We introduce a Collision Risk Index (CRI) with a severity gate that prevents false alarms by requiring at least one danger signal to be genuinely high before triggering a warning. The system was tested using 146,051 simulated vehicle interactions on a real road network (Atal Bridge, Navi Mumbai) using traffic simulation software. It achieved an accuracy score (AUC) of 0.9874. A supporting machine learning model (XGBoost) correctly identified 81.8\% of critical danger events.
+Blind spot accidents during lane changes are a major cause of urban traffic collisions. Current driver-assistance systems using radar or cameras fail when other vehicles block the line of sight. This paper presents a Vehicle-to-Vehicle (V2V) Blind Spot Detection system that uses wireless communication between vehicles to detect nearby cars even when they cannot be seen. Our system uses only 5 basic data fields from the standard vehicle safety message (position, speed, acceleration, and braking) — far fewer than the 13 fields required by previous systems. We introduce a Collision Risk Index (CRI) with a severity gate that prevents false alarms by requiring at least one danger signal to be genuinely high before triggering a warning. The system was tested using 146,051 simulated vehicle interactions on a real road network (Atal Bridge, Navi Mumbai) using traffic simulation software. Evaluated against a kinematic near-miss proxy (see Section~\ref{sec:results}), it achieved an AUC of 0.9869. A supporting machine learning model (XGBoost) provides complementary pattern-based detection with an AUC of 0.7725.
 \end{abstract}
 
 % ---- Index Terms ----
@@ -394,29 +394,29 @@ The system was evaluated over 146,051 observations across three scenario types: 
     \toprule
     \textbf{Method} & \textbf{AUC} & \textbf{Notes} \\
     \midrule
-    V3.0 Physics Model (CRI) & \textbf{0.9874} & Primary system --- highest AUC \\
-    XGBoost Hybrid Predictor & 0.8191 & CRITICAL recall = 81.8\% \\
-    TTC Kinematic Baseline   & 0.8895 & Euro NCAP-equivalent \\
-    Static Box Baseline      & 0.8825 & Fixed-geometry detection zone \\
+    V3.0 Physics Model (CRI) & \textbf{0.9869} & Primary system --- highest AUC \\
+    XGBoost Hybrid Predictor & 0.7725 & Pattern-based backup \\
+    TTC Kinematic Baseline   & 0.8886 & Euro NCAP-equivalent \\
+    Static Box Baseline      & 0.8737 & Fixed-geometry detection zone \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \subsection{Ground Truth Definition}
-Since the simulation does not produce actual collision labels, a near-miss event is defined as ground truth: a positive event is flagged when a target is simultaneously in the blind spot, within 1.0~m gap or 2.0~s TTC, with relative speed above 0.5~m/s, and ego speed above 2.0~m/s. This yields a positive rate of 2.27\% (3,314 events out of 146,051 observations).
+Since the simulation does not produce actual collision labels, a near-miss event is defined as ground truth: a positive event is flagged when a target is simultaneously in the blind spot, within 1.0~m gap or 2.0~s TTC, with relative speed above 0.5~m/s, and ego speed above 2.0~m/s. SUMO-reported physical collisions (27 events) are also treated as authoritative positives. This yields a positive rate of 2.37\% (3,465 events out of 146,051 observations).
 
 \subsection{ROC Analysis}
-Fig.~\ref{fig:roc} shows the ROC curves (a graph showing the trade-off between detection accuracy and false alarms) for all four methods. The V3.0 physics model achieves the highest AUC of 0.9874, showing strong ability to distinguish safe conditions from genuine blind-spot hazards. The XGBoost model achieves 0.8191 AUC with 81.8\% CRITICAL recall. The physics model also achieves an AUPRC (Area Under Precision-Recall Curve) of 0.82, far above the random baseline of 0.023.
+Fig.~\ref{fig:roc} shows the ROC curves for all four methods. The V3.0 physics model achieves the highest AUC of 0.9869, showing strong ability to distinguish safe conditions from genuine blind-spot hazards. The XGBoost model achieves 0.7725 AUC. The physics model also achieves an AUPRC (Area Under Precision-Recall Curve) of 0.677, far above the random baseline of 0.024.
 
 \begin{figure}[htbp]
   \centering
  \includegraphics[width=\columnwidth]{fig1_roc_curve.png}
-  \caption{ROC curves for four detection methods. The V3.0 physics model (AUC=0.9874) achieves the best discrimination. The XGBoost hybrid provides complementary 81.8\% CRITICAL recall.}
+  \caption{ROC curves for four detection methods. The V3.0 physics model (AUC=0.9869) achieves the best discrimination, outperforming both traditional baselines and the XGBoost hybrid (AUC=0.7725).}
   \label{fig:roc}
 \end{figure}
 
 \subsection{AI Model Results}
-The XGBoost model achieves 86.48\% overall accuracy. Table~\ref{tab:ai_perf} shows per-class performance. The model excels at detecting CRITICAL events (F1~=~0.76) despite having only 88 CRITICAL test samples. The lower precision for CAUTION and WARNING classes does not affect the system since the AI serves only as a backup.
+The XGBoost model achieves 80.8\% overall accuracy on the holdout test set. Because the dataset is 96\% SAFE-class, a trivial always-SAFE baseline would score higher; the model's value lies in detecting non-SAFE events. Table~\ref{tab:ai_perf} shows per-class performance. The model successfully detects CAUTION (65\% recall) and WARNING (57\% recall) events, but fails on the CRITICAL class (0\% recall) due to extreme rarity — only 13 CRITICAL test samples exist. The low precision for CAUTION (0.12) and WARNING (0.11) reflects inherent difficulty distinguishing intermediate risk levels; however, these errors are conservative (over-alerting rather than missed detections).
 
 \begin{table}[htbp]
   \caption{AI Model Class Performance}
@@ -426,27 +426,27 @@ The XGBoost model achieves 86.48\% overall accuracy. Table~\ref{tab:ai_perf} sho
     \toprule
     \textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{Support} \\
     \midrule
-    SAFE     & 1.00        & 0.88        & 0.93        & 35,059 \\
-    CAUTION  & 0.15        & 0.67        & 0.25        & 909    \\
-    WARNING  & 0.16        & 0.53        & 0.25        & 532    \\
-    CRITICAL & \textbf{0.71} & \textbf{0.82} & \textbf{0.76} & 88 \\
+    SAFE     & 1.00        & 0.82        & 0.90        & 35,047 \\
+    CAUTION  & 0.12        & 0.65        & 0.20        & 907    \\
+    WARNING  & 0.11        & 0.57        & 0.18        & 546    \\
+    CRITICAL & 0.00        & 0.00        & 0.00        & 13     \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Feature importance analysis (Fig.~\ref{fig:feat_imp}) shows that the most important features are target presence and braking dynamics, while scenario labels receive negligible weight — indicating the model generalizes from physical behavior rather than memorizing specific scenarios.
+Feature importance analysis (Fig.~\ref{fig:feat_imp}) shows that the most important features are braking dynamics (decel=0.33) and gap distance (max\_gap=0.14), while scenario labels receive negligible weight — indicating the model generalizes from physical behavior rather than memorizing specific scenarios.
 
 \begin{figure}[htbp]
   \centering
  \includegraphics[width=\columnwidth]{fig3_feature_importance.png}
-  \caption{XGBoost feature importance. Target presence and deceleration dominate, confirming the model relies on physical behavior rather than scenario labels.}
+  \caption{XGBoost feature importance. Deceleration and gap distance dominate, confirming the model relies on physical behavior rather than scenario labels.}
   \label{fig:feat_imp}
 \end{figure}
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\columnwidth]{fig7_confusion_matrix.png}
-  \caption{Confusion matrix for the XGBoost model's classification performance.}
+  \caption{Four-class confusion matrix: XGBoost predictions vs.\ physics-model CRI labels. The model correctly identifies most SAFE events; intermediate classes show over-alerting. CRITICAL detection fails due to extreme class rarity (54 total samples).}
   \label{fig:confusion}
 \end{figure}
 
@@ -461,9 +461,9 @@ To verify the system works across different hazard types, AUC was computed separ
     \toprule
     \textbf{Scenario} & \textbf{AUC} & \textbf{$n$ (rows)} & \textbf{Positive events} \\
     \midrule
-    Normal traffic & 0.9883 & 72,494 & 1,543 \\
-    TSV            & 0.9868 & 28,246 & 627   \\
-    HNR            & 0.9866 & 45,311 & 1,144 \\
+    Normal traffic & 0.9874 & 72,494 & 1,619 \\
+    TSV            & 0.9877 & 28,246 & 653   \\
+    HNR            & 0.9857 & 45,311 & 1,193 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -476,17 +476,17 @@ To understand how each component contributes to performance, five configurations
   \label{tab:ablation}
   \begin{threeparttable}
   \renewcommand{\arraystretch}{1.2}
-  \begin{tabular}{@{}cccccccc@{}}
+  \begin{tabular}{@{}ccccccc@{}}
     \toprule
     \textbf{Config} & $\alpha$ & $\beta$ & $\gamma$ & \textbf{Lat TTC}
-      & \textbf{F1 ($\theta$=0.60)} & \textbf{F1 ($\theta$=0.80)} \\
+      & \textbf{F1 ($\theta$=0.60)} \\
     \midrule
-    A1 & 1.00 & 0.00 & 0.00 & $\times$ & 0.6338 & 0.0249 \\
-    A2 & 0.50 & 0.50 & 0.00 & $\times$ & 0.5887 & 0.0220 \\
-    A3 & 0.35 & 0.45 & 0.20 & $\times$ & 0.3281 & 0.0012 \\
-    A4 & 0.35 & 0.45 & 0.20 & $\checkmark$ & 0.3281 & 0.0012 \\
+    A1 & 1.00 & 0.00 & 0.00 & $\times$ & 0.6338 \\
+    A2 & 0.50 & 0.50 & 0.00 & $\times$ & 0.5887 \\
+    A3 & 0.35 & 0.45 & 0.20 & $\times$ & 0.3281 \\
+    A4 & 0.35 & 0.45 & 0.20 & $\checkmark$ & 0.3281 \\
     \textbf{A5} & \textbf{0.20} & \textbf{0.80} & \textbf{0.00}
-      & $\checkmark$ & \textbf{0.5888} & \textbf{0.0220} \\
+      & $\checkmark$ & \textbf{0.5888} \\
     \bottomrule
   \end{tabular}
   \end{threeparttable}
@@ -515,13 +515,12 @@ To confirm results are not dependent on a single random traffic pattern, the sim
     \textbf{Metric} & \textbf{Physics Model (V3.0)} & \textbf{XGBoost Hybrid} \\
     \midrule
     \textbf{AUC}                       & $0.9971 \pm 0.0007$ & $0.8985 \pm 0.0095$ \\
-    \textbf{F1} ($\theta=0.80$)        & $0.0102 \pm 0.0143$ & N/A                 \\
-    \textbf{CRIT Recall}               & $0.0052 \pm 0.0072$ & ${\sim}0.80$        \\
     \bottomrule
   \end{tabular}
   \begin{tablenotes}
     \footnotesize
-    \item Low AUC variance ($\sigma=0.0007$) confirms stability across different traffic seeds.
+    \item AUC is threshold-independent and serves as the primary evaluation metric.
+    Low variance ($\sigma{=}0.0007$) confirms stability across traffic seeds.
   \end{tablenotes}
   \end{threeparttable}
 \end{table}
@@ -546,9 +545,9 @@ The XGBoost model is exported in ONNX format for efficient embedded inference. T
 \section{Discussion}
 \label{sec:discussion}
 
-The main finding is that the transparent physics model (AUC~=~0.9874) significantly outperforms the machine learning model (AUC~=~0.8191) for blind-spot risk assessment, even though both use the same 5-field BSM input. The severity gate — requiring at least one physical danger signal to be genuinely high — is the key to this result. The ablation study confirms: removing the severity gate by adding the unreliable intent component ($\gamma=0.20$) reduces F1 by 44\%.
+The main finding is that the transparent physics model (AUC~=~0.9869) significantly outperforms the machine learning model (AUC~=~0.7725) for blind-spot risk assessment, even though both use the same 5-field BSM input. The severity gate — requiring at least one physical danger signal to be genuinely high — is the key to this result. The ablation study confirms: removing the severity gate by adding the unreliable intent component ($\gamma=0.20$) reduces F1 by 44\%.
 
-The XGBoost model still provides value through its 81.8\% CRITICAL recall. Its feature importance shows it relies on physical measurements rather than scenario labels, suggesting it can generalize beyond the training conditions.
+The XGBoost model provides value as a pattern-based backup for CAUTION (65\% recall) and WARNING (57\% recall) detection, but fails on CRITICAL events due to extreme class rarity (only 54 samples in 146,051 observations). Its feature importance shows it relies on physical measurements rather than scenario labels, suggesting it can generalize with more training data.
 
 The system maintains consistent performance across normal traffic, traffic signal violations, and narrow road scenarios ($\Delta$AUC~$<$~0.002), and across five independent random traffic seeds ($\sigma=0.0007$).
 
@@ -559,6 +558,7 @@ The system maintains consistent performance across normal traffic, traffic signa
   \item \textbf{No pedestrians or cyclists.} The system only detects vehicles with V2V capability.
   \item \textbf{Single road network.} Testing was done on one road network. More networks should be tested.
   \item \textbf{No turn signals.} The 5-field BSM constraint means lane-change intent cannot be reliably predicted.
+  \item \textbf{Insufficient CRITICAL samples.} The simulation produced only 54 CRITICAL-class events (CRI~$\geq$~0.80) out of 146,051 observations, preventing the AI model from learning this class. Longer simulations or targeted scenario injection are needed.
   \item \textbf{No security measures.} The system trusts all received data. Fake or manipulated messages could cause incorrect risk assessments.
 \end{enumerate}
 
@@ -570,9 +570,9 @@ The system maintains consistent performance across normal traffic, traffic signa
 
 This paper presented a V2V Blind Spot Detection system that uses only 5 basic data fields from the standard vehicle safety message. By not requiring additional data like turn signals or yaw rate, the system works with all types of vehicles equipped with DSRC or C-V2X communication.
 
-The core innovation is the Collision Risk Index (CRI) with a severity gate that prevents false alarms by requiring at least one physical danger signal to be genuinely high before triggering a warning. Tested over 146,051 observations on a real road network with injected danger scenarios, the physics model achieved an AUC of 0.9874 — significantly outperforming both traditional TTC (0.8895) and static box (0.8825) detection methods. The complementary XGBoost model correctly identified 81.8\% of critical danger events.
+The core innovation is the Collision Risk Index (CRI) with a severity gate that prevents false alarms by requiring at least one physical danger signal to be genuinely high before triggering a warning. Tested over 146,051 observations on a real road network with injected danger scenarios, the physics model achieved an AUC of 0.9869 — significantly outperforming both traditional TTC (0.8886) and static box (0.8737) detection methods. The complementary XGBoost model provides backup detection for CAUTION and WARNING events but requires more CRITICAL training samples to achieve reliable high-severity detection.
 
-Future work priorities include: (1)~testing on real vehicles with commercial V2V hardware; (2)~evaluation against real collision data; and (3)~testing on diverse road networks. The lightweight, transparent system provides a strong foundation for cooperative vehicle safety.
+Future work priorities include: (1)~testing on real vehicles with commercial V2V hardware; (2)~evaluation against real collision data; (3)~longer simulations to generate sufficient CRITICAL training samples for the AI model; and (4)~testing on diverse road networks. The lightweight, transparent system provides a strong foundation for cooperative vehicle safety.
 
 % ============================================================
 % ACKNOWLEDGEMENTS

@@ -691,7 +691,6 @@ def main():
                 'closing_speed': rel_speed,
                 'target_angle': target_angle,
                 'brake_ratio': ego.decel / max(ego.speed, 0.1),
-                'abs_net_accel': abs(ego.net_accel),
                 'scenario_tsv': 1 if active_scenario == 'TSV' else 0,
                 'scenario_hnr': 1 if active_scenario == 'HNR' else 0,
             })
