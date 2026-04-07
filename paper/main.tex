@@ -1,8 +1,8 @@
 % ============================================================
-%  IEEE Conference Paper — Overleaf Compatible
+%  Journal of Electrical Engineering & Technology (JEET) Format
 %  Vehicle-to-Vehicle Communication for Blind Spot Detection
 % ============================================================
-\documentclass[conference]{IEEEtran}
+\documentclass[sn-mathphys-num,Numbered,iicol]{sn-jnl}
 
 % ---- Core Packages ----
 \usepackage[T1]{fontenc}
@@ -11,16 +11,10 @@
 \usepackage{algorithmic}
 \usepackage{graphicx}
 \usepackage{textcomp}
-\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{url}
-\usepackage{cite}
-\usepackage{threeparttable}
-\usepackage{hyperref}
-
-% ---- IEEE-specific settings ----
-\IEEEoverridecommandlockouts
+\usepackage{mathptmx}  % Times New Roman font (as per JEET template)
 
 % ---- Custom math operator ----
 \DeclareMathOperator{\atan2}{atan2}
@@ -28,251 +22,147 @@
 % ============================================================
 \begin{document}
 
-% ---- Title ----
-\title{Vehicle-to-Vehicle Communication for Blind Spot Detection and
+\title[V2V Blind Spot Detection via Severity-Gated CRI]{Vehicle-to-Vehicle Communication for Blind Spot Detection and
 Accident Prevention Using Severity-Gated Collision Risk Indexing}
 
-% ---- Author Block ----
-\author{%
-  \IEEEauthorblockN{Dr.~Vaishali Khairnar\textsuperscript{*},
-    \textit{Omkar Kadam, Gauri Phanse, Afraz Khan, Abhinav Prasad}}
-  \IEEEauthorblockA{%
-    Department of Information Technology\\
-    Terna Engineering College\\
-    Nerul, Navi Mumbai, India\\
-    \textsuperscript{*}vaishali.khairnar@ternaengg.ac.in}
-}
+\author*[1]{\fnm{Omkar} \sur{Kadam}}\email{omkarkadam181188@gmail.com}
+\author[1]{\fnm{Abhinav} \sur{Prasad}}
+\author[1]{\fnm{Gauri} \sur{Phanse}}
+\author[1]{\fnm{Afraz} \sur{Khan}}
+\author[1]{\fnm{Vaishali} \sur{Khairnar}}\email{vaishali.khairnar@ternaengg.ac.in}
 
-\maketitle
+\affil[1]{\orgdiv{Department of Information Technology},
+\orgname{Terna Engineering College},
+\orgaddress{\city{Nerul, Navi Mumbai}, \country{India}}}
 
 % ============================================================
 % ABSTRACT
 % ============================================================
-\begin{abstract}
-Blind spot accidents during lane changes are a major cause of urban traffic collisions. Current driver-assistance systems using radar or cameras fail when other vehicles block the line of sight. This paper presents a Vehicle-to-Vehicle (V2V) Blind Spot Detection system that uses wireless communication between vehicles to detect nearby cars even when they cannot be seen. Our system uses only 5 basic data fields from the standard vehicle safety message (position, speed, acceleration, and braking) — far fewer than the 13 fields required by previous systems. We introduce a Collision Risk Index (CRI) with a severity gate that prevents false alarms by requiring at least one danger signal to be genuinely high before triggering a warning. The system was tested using 146,051 simulated vehicle interactions on a real road network (Atal Bridge, Navi Mumbai) using traffic simulation software. Evaluated against a kinematic near-miss proxy (see Section~\ref{sec:results}), it achieved an AUC of 0.9869. A supporting machine learning model (XGBoost) provides complementary pattern-based detection with an AUC of 0.7725.
-\end{abstract}
+\abstract{Blind spot accidents during lane changes are a major cause of urban traffic collisions. Current driver-assistance systems using radar or cameras fail when other vehicles block the line of sight. This paper presents a Vehicle-to-Vehicle (V2V) Blind Spot Detection system using wireless communication to detect nearby vehicles even when hidden from sensors. The system uses only 5 data fields from the standard Basic Safety Message (BSM) --- far fewer than the 13 fields required by previous systems. We introduce a Collision Risk Index (CRI) with a severity gate that prevents false alarms by requiring at least one danger signal to be genuinely high before triggering a warning. Tested using 146,051 simulated vehicle interactions on a real road network, it achieved an AUC of 0.9869 (AUPRC = 0.677 vs.\ 0.024 random baseline), confirmed stable across six independent traffic seeds ($0.9954 \pm 0.0041$). An exploratory XGBoost classifier is included as a future-work baseline.}
 
-% ---- Index Terms ----
-\begin{IEEEkeywords}
-Vehicle-to-Vehicle Communication, Blind Spot Detection, Collision Risk
-Index, DSRC, C-V2X, Basic Safety Message, XGBoost, SUMO Simulation, Indian Urban Traffic
-\end{IEEEkeywords}
+\keywords{Blind Spot Detection, Collision Risk Index, DSRC/C-V2X, Severity Gate, Vehicle-to-Vehicle Communication}
+
+\maketitle
 
 % ============================================================
-% I. INTRODUCTION
+% 1. INTRODUCTION
 % ============================================================
-\section{Introduction}
+\section{Introduction}\label{sec:introduction}
 
-Road traffic injuries cause about 1.19 million deaths worldwide every year, making it the leading cause of death for people aged 5--29~\cite{who2023}. Many of these accidents happen when drivers change lanes without seeing vehicles in their blind spots. In India, dense and mixed traffic on urban roads makes this problem even worse, often leading to multi-vehicle crashes~\cite{morth2023}.
+Road traffic injuries cause about 1.19 million deaths worldwide every year, making it the leading cause of death for people aged 5--29~\cite{who2023}. Many of these accidents happen when drivers change lanes without seeing vehicles in their blind spots. In India, dense and mixed traffic on urban roads makes this problem even worse~\cite{morth2023}.
 
-Blind spots are areas around a vehicle that the driver cannot see through mirrors or windows. The car's pillars and limited mirror angles create these hidden zones. While modern driver-assistance systems use sensors like radar and cameras to detect vehicles in blind spots, these sensors fail when large vehicles physically block the view — which happens frequently in heavy traffic~\cite{biswas2006}.
+While modern driver-assistance systems use radar and cameras to detect blind spot vehicles, these sensors fail when large vehicles physically block the view --- which happens frequently in heavy traffic~\cite{biswas2006}. Vehicle-to-Vehicle (V2V) communication solves this by letting vehicles exchange data using radio signals that pass through obstacles. Each vehicle broadcasts its location, speed, and other data using the Basic Safety Message (BSM)~\cite{sae_j2735,sae_j2945} at 10~Hz, reaching up to 300~m~\cite{biswas2006}. Two wireless technologies support this: DSRC using IEEE 802.11p~\cite{ieee_80211p}, and C-V2X using cellular networks~\cite{3gpp2016}.
 
-Vehicle-to-Vehicle (V2V) communication solves this problem by letting vehicles talk directly to each other using radio signals. These radio signals pass through obstacles, so a vehicle can know about nearby cars even when they are hidden behind a truck or bus. Each vehicle continuously broadcasts its location, speed, and other data using a standardized message called the Basic Safety Message (BSM)~\cite{sae_j2735,sae_j2945}. This message is sent 10 times per second and can reach vehicles up to 300 metres away~\cite{biswas2006}. Two main wireless technologies support this: DSRC (Dedicated Short Range Communications) using IEEE 802.11p~\cite{ieee_80211p}, and C-V2X (Cellular Vehicle-to-Everything) using cellular networks~\cite{3gpp2016}.
+Previous V2V blind spot systems needed up to 13 BSM fields including heading, turn signals, and yaw rate~\cite{mousa2021}, creating compatibility problems with older vehicles. Our system uses only 5 fields: GPS position ($x$, $y$), speed ($v$), acceleration ($a$), and braking ($d$), deriving heading from position history.
 
-Previous V2V blind spot detection systems needed up to 13 data fields from the safety message, including heading direction, turn signals, and yaw rate~\cite{mousa2021}. This creates compatibility problems because older vehicles may not support all these fields. Our system uses only 5 fields: GPS position ($x$, $y$), speed ($v$), acceleration ($a$), and braking ($d$). Missing information like heading direction is calculated from the vehicle's position history.
-
-The main contributions of this work are:
+The main contributions are:
 \begin{enumerate}
-  \item \textbf{Severity-gated Collision Risk Index.} A new risk formula that requires at least one physical danger signal (braking distance or collision timing) to be genuinely high before triggering a warning. This prevents false alarms caused by small, harmless signals adding up.
-
-  \item \textbf{Minimal 5-field BSM.} The system works with only 5 basic data fields, eliminating the need for 13 fields required by previous systems — making it compatible with all types of vehicles.
-
-  \item \textbf{Dual physics-AI architecture.} A machine learning model (XGBoost) works alongside the physics-based model to catch unusual danger patterns, while the transparent physics model remains the primary decision-maker.
-
-  \item \textbf{Realistic testing.} The system was tested on a real road network under challenging conditions including traffic signal violations and narrow hilly roads, with simulated communication failures.
+  \item \textbf{Severity-gated Collision Risk Index.} A risk formula requiring at least one genuinely high danger signal before triggering a warning, preventing false alarms from small values adding up.
+  \item \textbf{Minimal 5-field BSM.} Eliminates the need for 13 fields, making the system compatible with all vehicle types.
+  \item \textbf{Exploratory ML baseline comparison.} An XGBoost classifier reveals that physics models outperform data-driven approaches when dangerous events are rare.
+  \item \textbf{Realistic testing.} Tested on a real road network with traffic signal violations, narrow hilly roads, and simulated communication failures.
 \end{enumerate}
 
-The rest of this paper covers: related work (Section~\ref{sec:related}), system architecture (Section~\ref{sec:architecture}), the mathematical model (Section~\ref{sec:math}), scenario testing (Section~\ref{sec:scenario}), experimental setup (Section~\ref{sec:setup}), results (Section~\ref{sec:results}), deployment (Section~\ref{sec:deployment}), discussion (Section~\ref{sec:discussion}), and conclusion (Section~\ref{sec:conclusion}).
+% ============================================================
+% 2. RELATED WORK
+% ============================================================
+\section{Related Work}\label{sec:related}
+
+\subsection{Sensor-Based and V2V Blind Spot Detection}
+Current commercial systems use radar sensors on rear bumpers, which work well on open roads but fail in dense traffic where large vehicles block signals. V2V communication overcomes this as radio signals pass through vehicles. V2V systems use SAE J2735~\cite{sae_j2735} for message formatting and IEEE 802.11p~\cite{ieee_80211p} for transmission. The SAE J2945/1 standard~\cite{sae_j2945} requires 10~Hz BSM broadcasts. Our system uses only 5 BSM Part~I fields, compatible with basic on-board units~\cite{festag2014}.
+
+\subsection{Risk Assessment and Machine Learning}
+Time-to-Collision (TTC) is widely used in Euro NCAP testing~\cite{euroncap2019} but becomes unreliable with lateral vehicle movement. Early V2V systems used shared GPS coordinates~\cite{rawashdeh2008}; Kim~\textit{et~al.}~\cite{kim2015} developed threat assessment using V2V data; Mousa~\textit{et~al.}~\cite{mousa2021} created a 13-field V2V blind spot system. A common problem is that multiple small risk values trigger false warnings --- our severity gate prevents this. Machine learning models like XGBoost~\cite{chen2016xgboost} work well for structured data, but raise interpretability concerns for safety decisions. SMOTE~\cite{smote2002} helps handle rare dangerous events. In our system, an XGBoost classifier is included as an exploratory comparison only.
 
 % ============================================================
-% II. RELATED WORK
+% 3. SYSTEM ARCHITECTURE
 % ============================================================
-\section{Related Work}
-\label{sec:related}
-
-\subsection{Radar and Camera-Based Blind Spot Detection}
-Current commercial blind spot systems use radar sensors mounted on rear bumpers to detect nearby vehicles. These work well on open roads but have limitations in dense traffic, where large vehicles can block or deflect radar signals. A radar system cannot detect a car approaching from behind a truck. V2V communication overcomes this because radio signals pass through vehicles.
-
-\subsection{V2V Communication Standards and the BSM}
-V2V systems use the SAE J2735 standard~\cite{sae_j2735} for message formatting and IEEE 802.11p~\cite{ieee_80211p} for wireless transmission. The Basic Safety Message (BSM) is the core data packet that vehicles broadcast, containing their location, speed, and other safety data. The SAE J2945/1 standard~\cite{sae_j2945} requires this message to be sent 10 times per second. Newer cellular V2X systems~\cite{3gpp2016} support the same message format. Our system uses only 5 fields from the BSM Part~I (position, speed, acceleration, braking), making it work with basic and affordable on-board communication units~\cite{festag2014}.
-
-\subsection{Risk Assessment for V2V Safety}
-Previous approaches to collision risk estimation have used various methods. Time-to-Collision (TTC) is a common metric used in Euro NCAP safety testing~\cite{euroncap2019}, but it becomes unreliable when vehicles weave laterally. Early V2V blind spot systems used shared GPS coordinates~\cite{rawashdeh2008}. Kim~\textit{et~al.}~\cite{kim2015} developed a threat assessment model using V2V data, and Mousa~\textit{et~al.}~\cite{mousa2021} created a V2V blind spot system using 13 BSM fields.
-
-A common problem with existing risk models is that multiple small, harmless risk values can add up and trigger false warnings. Our severity gate prevents this by requiring at least one danger signal to be genuinely high before raising an alarm.
-
-\subsection{Machine Learning in Transportation Safety}
-Machine learning models like XGBoost~\cite{chen2016xgboost} work well for structured safety data. However, using a purely AI-based system for safety decisions raises concerns because it is hard to understand why the model made a specific decision. Oversampling methods like SMOTE~\cite{smote2002} help handle the fact that dangerous events are rare in safety data. In our system, the AI model serves only as a backup — the transparent physics model makes the primary safety decisions.
-
-% ============================================================
-% III. SYSTEM ARCHITECTURE
-% ============================================================
-\section{System Architecture}
-\label{sec:architecture}
+\section{System Architecture}\label{sec:architecture}
 
 The system is organized as a four-layer pipeline (Fig.~\ref{fig:architecture}):
-
-\textbf{Layer~1 --- Simulation \& Environment.}
-Eclipse SUMO~\cite{sumo2018} generates realistic vehicle movements at 10 updates per second. Dangerous scenarios (traffic signal violations and narrow road conditions) are injected to test the system under stress.
-
-\textbf{Layer~2 --- Communication \& Perception.}
-Each vehicle's data is packaged into a 5-field BSM. GPS noise (1.5~m uncertainty) and random packet drops (using a Gilbert-Elliott channel model) are added to simulate real-world communication conditions. When a message is lost, the system predicts where the vehicle should be using its last known speed and direction.
-
-\textbf{Layer~3 --- Intelligence Kernel.}
-Received messages are processed by two parallel paths:
-\begin{itemize}
-  \item \textbf{Physics model (primary):} Calculates the Collision Risk Index (CRI) using mathematical formulas based on vehicle positions, speeds, and braking distances.
-  \item \textbf{AI model (secondary):} An XGBoost classifier trained on 15 features derived from the BSM data, providing backup pattern detection.
-\end{itemize}
-
-\textbf{Layer~4 --- Analytics \& Presentation.}
-A Streamlit dashboard displays real-time V2V connections, risk scores per vehicle, and comparison charts.
+\textbf{Layer~1 (Simulation):} Eclipse SUMO~\cite{sumo2018} generates vehicle movements at 10~Hz with injected danger scenarios.
+\textbf{Layer~2 (Communication):} Vehicle data is packaged into 5-field BSMs with GPS noise (1.5~m) and packet drops (Gilbert-Elliott model). Lost messages trigger dead-reckoning prediction.
+\textbf{Layer~3 (Intelligence):} Two parallel paths process received data --- a physics model (primary, CRI-based) and an XGBoost classifier (exploratory baseline).
+\textbf{Layer~4 (Analytics):} A Streamlit dashboard displays real-time V2V connections and risk scores.
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.9\columnwidth]{architecture_diagram.png}
-  \caption{Four-layer V2V BSD system architecture. Data flows from
-    traffic simulation through the communication model, into the dual-path
-    intelligence kernel (physics + AI), and to the analytics dashboard.}
+  \caption{Four-layer V2V BSD system architecture.}
   \label{fig:architecture}
 \end{figure}
 
 % ============================================================
-% IV. MATHEMATICAL MODEL
+% 4. MATHEMATICAL MODEL
 % ============================================================
-\section{Mathematical Model}
-\label{sec:math}
+\section{Mathematical Model}\label{sec:math}
 
-This section describes the formulas used to calculate collision risk. The system takes in 5 data fields from each nearby vehicle and produces a single risk score between 0 (safe) and 1 (critical danger).
+The system takes 5 data fields from each nearby vehicle and produces a risk score between 0 (safe) and 1 (critical).
 
-\subsection{5-Field BSM Input}
-The system uses only 5 values from each vehicle's safety message:
-\begin{equation}
-  \mathrm{BSM} = \{x,\; y,\; v,\; a,\; d\}
-\end{equation}
-where $x,y$ are the vehicle's GPS coordinates (converted to metres), $v$ is speed, $a$ is acceleration, and $d$ is braking strength.
-
-The vehicle's heading direction is calculated from its recent positions:
+\subsection{BSM Input and Heading Estimation}
+The 5-field BSM is $\mathrm{BSM} = \{x, y, v, a, d\}$ where $x,y$ are GPS coordinates, $v$ is speed, $a$ is acceleration, and $d$ is braking strength. Heading is derived from position history:
 \begin{equation}
   \theta(t) = \atan2\!\bigl(y(t)-y(t-1),\; x(t)-x(t-1)\bigr)
 \end{equation}
-At very low speeds (below 0.5~m/s), GPS noise makes this calculation unreliable, so the system holds the last known heading:
-\begin{equation}
-  \theta(t) = \theta(t-1) \quad \text{if } v(t) < 0.5\;\text{m/s}
-\end{equation}
-The turning rate is then:
-\begin{equation}
-  \dot{\theta}(t) = \frac{\theta(t) - \theta(t-1)}{\Delta t}
-\end{equation}
+At speeds below 0.5~m/s, the last known heading is held to avoid GPS noise. The turning rate is $\dot{\theta}(t) = [\theta(t) - \theta(t-1)]/\Delta t$.
 
-\subsection{Coordinate Transformation}
-To determine which side of the ego vehicle (the driver's car) a target vehicle is on, we transform the target's position into the ego vehicle's reference frame. In this frame, the lateral axis ($x_{\mathrm{rel}}$) points to the right and the longitudinal axis ($y_{\mathrm{rel}}$) points forward:
+\subsection{Coordinate Transformation and Blind Spot Zone}
+The target's position is transformed into the ego vehicle's reference frame:
 \begin{align}
   x_{\mathrm{rel}} &= \sin(\theta_e)\cdot\Delta x - \cos(\theta_e)\cdot\Delta y \\
   y_{\mathrm{rel}} &= \cos(\theta_e)\cdot\Delta x + \sin(\theta_e)\cdot\Delta y
 \end{align}
-where $\Delta x = x_t - x_e$ and $\Delta y = y_t - y_e$. A positive $x_{\mathrm{rel}}$ means the target is on the right side.
-
-\subsection{Dynamic Blind Spot Zone}
-The blind spot zone extends further at higher speeds. The zone length is:
+where $\Delta x = x_t - x_e$, $\Delta y = y_t - y_e$. The blind spot zone extends with speed:
 \begin{equation}
   L_{\mathrm{bs}}(v_e) = L_{\mathrm{base}} + \lambda_{\mathrm{scale}}
     \cdot \mathrm{clamp}\!\left(\frac{v_e - v_{\min}}{v_{\max} - v_{\min}},\,0,\,1\right)
 \end{equation}
-On curves, the blind spot zone shifts laterally. A curvature correction adjusts for this when the vehicle is turning:
-\begin{equation}
-  x_{\mathrm{corrected}} = x_{\mathrm{rel}} - \frac{y_{\mathrm{rel}}^2\cdot\dot{\theta}_e}{2\cdot v_e}
-\end{equation}
-A target is considered to be in the blind spot if it falls within the lateral range defined by the ego vehicle's width, lane width, and a 0.5~m tolerance margin.
-
-The resulting CRI distribution (Fig.~\ref{fig:cri_dist}) confirms that the severity gate prevents excessive warnings, with 96.0\% of observations remaining in the SAFE region.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.9\columnwidth]{fig2_cri_distribution.png}
-  \caption{CRI score distribution across 146,051 simulation timesteps. 96.0\% of observations are in the SAFE region (CRI~$<$~0.30), confirming the severity gate prevents excessive warnings.}
-  \label{fig:cri_dist}
-\end{figure}
+On curves, a curvature correction shifts the zone laterally: $x_{\mathrm{corrected}} = x_{\mathrm{rel}} - y_{\mathrm{rel}}^2\dot{\theta}_e/(2v_e)$.
 
 \subsection{Blind Spot Zone Probability}
-Since GPS is not perfectly accurate (1.5~m uncertainty), the system calculates the \textit{probability} that a target is in the blind spot rather than making a binary yes/no decision. This is done by integrating a Gaussian distribution over the blind spot boundaries:
+Since GPS has 1.5~m uncertainty, the system calculates the \textit{probability} of a target being in the blind spot using Gaussian integration:
 \begin{align}
   P_{\mathrm{lat}} &= \Phi\!\left(\frac{x_{\max} - x_c}{\sigma}\right) - \Phi\!\left(\frac{x_{\min} - x_c}{\sigma}\right) \\
   P_{\mathrm{lon}} &= \Phi\!\left(\frac{y_{\max} - y_c}{\sigma}\right) - \Phi\!\left(\frac{y_{\min} - y_c}{\sigma}\right)
 \end{align}
-where $\Phi$ is the standard normal cumulative distribution function, $(x_c, y_c)$ is the target's corrected position, and $\sigma = 1.5$~m is the GPS uncertainty. The combined probability is:
-\begin{equation}
-  P_{\mathrm{gps}}(V_t \in Z_{\mathrm{bs}}) = |P_{\mathrm{lat}}| \times P_{\mathrm{lon}}
-\end{equation}
-A forward-lane filter prevents false alarms from vehicles directly ahead in the same lane.
+where $\Phi$ is the standard normal CDF and $\sigma = 1.5$~m. The combined probability is $P_{\mathrm{gps}} = |P_{\mathrm{lat}}| \times P_{\mathrm{lon}}$, with a forward-lane filter to prevent false alarms from vehicles directly ahead.
 
-\subsection{Dead Reckoning Under Packet Loss}
-When communication packets are lost, the system predicts where the target vehicle should be using its last known speed and direction (Constant-Acceleration, Constant-Yaw-Rate model):
+\subsection{Dead Reckoning and Packet Loss}
+When packets are lost, the system predicts target position using a Constant-Acceleration, Constant-Yaw-Rate model:
 \begin{equation}
   \hat{x} = x + v\cos(\theta)\,\tau + \tfrac{1}{2}\,a_{\mathrm{net}}\cos(\theta)\,\tau^2
 \end{equation}
 \begin{equation}
   \hat{y} = y + v\sin(\theta)\,\tau + \tfrac{1}{2}\,a_{\mathrm{net}}\sin(\theta)\,\tau^2
 \end{equation}
-This prediction is limited to 0.5~seconds; if more than four consecutive packets are lost, the target is dropped to avoid unreliable estimates.
+Prediction is limited to 0.5~s; targets are dropped after four consecutive lost packets. A Packet Loss Ratio (PLR) tracked over a 10-step window increases risk: $\Gamma_{\mathrm{plr}} = 1 + 0.30 \cdot \mathrm{PLR}_{\mathrm{window}}$.
 
-\subsection{Packet Loss Safety Multiplier}
-A Packet Loss Ratio (PLR) is tracked over a 10-step window. Higher packet loss increases the risk score to account for uncertainty:
-\begin{equation}
-  \Gamma_{\mathrm{plr}} = 1 + 0.30 \cdot \mathrm{PLR}_{\mathrm{window}}
-\end{equation}
-
-\subsection{Deceleration Risk ($R_{\mathrm{decel}}$)}
-This measures whether the target vehicle can stop in time. First, the maximum braking capability is calculated:
+\subsection{Risk Components}
+\textbf{Deceleration Risk} measures whether the target can stop in time. Maximum braking capability includes friction and aerodynamic drag:
 \begin{equation}
   a_{\max} = \mu\cdot g + \frac{\rho\cdot C_d\cdot A_f\cdot v_t^2}{2\cdot M_t}
 \end{equation}
-where $\mu$ is road friction, $g$ is gravity, and the second term accounts for air resistance. The total stopping distance includes a 1.2~second reaction time~\cite{aashto2018}:
-\begin{equation}
-  D_{\mathrm{stop}} = v_t\cdot T_{\mathrm{react}} + \frac{v_t^2}{2\cdot a_{\max}}
-\end{equation}
-The risk grows exponentially as the stopping distance approaches the actual gap between vehicles:
+Stopping distance includes 1.2~s reaction time~\cite{aashto2018}: $D_{\mathrm{stop}} = v_t T_{\mathrm{react}} + v_t^2/(2a_{\max})$. Risk grows exponentially as the gap approaches stopping distance:
 \begin{equation}
   R_{\mathrm{decel}} = \mathrm{clip}\!\left(
-    \exp\!\left(-K_{\mathrm{brake}} \cdot \frac{d_{\mathrm{gap}} - D_{\mathrm{stop}}}{D_{\mathrm{stop}}}\right),\; 0,\; 1
+    \exp\!\left(-1.50 \cdot \frac{d_{\mathrm{gap}} - D_{\mathrm{stop}}}{D_{\mathrm{stop}}}\right),\; 0,\; 1
   \right)
 \end{equation}
-where $K_{\mathrm{brake}} = 1.50$. When the gap exactly equals the stopping distance, risk is 1.0 (maximum); as the gap grows, risk drops toward zero.
 
-The distributions of all three risk components across the simulation are shown in Fig.~\ref{fig:risk_components}.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.9\columnwidth]{fig5_risk_components.png}
-  \caption{Distributions of the three CRI risk components. High-risk values are rare, consistent with the 2.37\% positive event rate in the simulation.}
-  \label{fig:risk_components}
-\end{figure}
-
-\subsection{Time-to-Collision Risk ($R_{\mathrm{ttc}}$)}
-This measures how soon a collision could happen. The system solves the equation
-$a_{\mathrm{rel}}\,\tau^2 + v_{\mathrm{rel}}\,\tau + x_{\mathrm{rel}} = 0$
-to find the time until the two vehicles would meet (TTC). The risk is:
+\textbf{Time-to-Collision Risk} solves $a_{\mathrm{rel}}\tau^2 + v_{\mathrm{rel}}\tau + x_{\mathrm{rel}} = 0$ for TTC:
 \begin{equation}
   R_{\mathrm{ttc}} = \begin{cases}
-    1.0
-      & \text{if } \mathrm{TTC} \le 4.0\;\text{s} \\[4pt]
-    \left(\dfrac{4.0}{\mathrm{TTC}}\right)^{\!2}
-      & \text{if } 4.0\;\text{s} < \mathrm{TTC} \le 8.0\;\text{s} \\[6pt]
-    0
-      & \text{otherwise}
+    1.0 & \text{if } \mathrm{TTC} \le 4.0\;\text{s} \\[2pt]
+    (4.0/\mathrm{TTC})^{2} & \text{if } 4.0 < \mathrm{TTC} \le 8.0\;\text{s} \\[2pt]
+    0 & \text{otherwise}
   \end{cases}
 \end{equation}
-A parallel calculation checks for side collisions using the lateral gap between vehicles. For the lateral TTC component, a linear decay $1 - \mathrm{TTC}_{\mathrm{lat}}/\mathrm{TTC}_{\mathrm{crit}}$ is used rather than the quadratic form, as lateral closing speeds are typically lower. The combined TTC risk takes the higher of the two values.
+A parallel lateral TTC check uses linear decay. The combined TTC risk takes the higher value.
 
-\subsection{Intent Risk ($R_{\mathrm{intent}}$)}
-Without turn signal data, the system tries to estimate whether the ego vehicle is drifting sideways toward another lane:
-\begin{equation}
-  R_{\mathrm{intent}} = 0.6 \cdot \min\!\left(1,\; \frac{\max(0,\, v_{\mathrm{lat,toward}})}{1.0\;\text{m/s}}\right)
-\end{equation}
-However, testing showed that predicting lane-change intent without turn signals is unreliable. Therefore, this component is disabled in the final system ($\gamma=0$).
+\textbf{Intent Risk} estimates lateral drift without turn signals: $R_{\mathrm{intent}} = 0.6 \cdot \min(1, \max(0, v_{\mathrm{lat,toward}})/1.0)$. Testing showed this unreliable without turn signal data, so it is disabled ($\gamma=0$).
 
-\subsection{Collision Risk Index with Severity Gate}
-The final Collision Risk Index (CRI) combines all components into a single score:
+\subsection{CRI with Severity Gate}
+The final Collision Risk Index combines all components:
 \begin{equation}
   \mathrm{CRI} = \mathrm{clip}\!\Big(
     P_{\mathrm{gps}} \cdot \max(R_{\mathrm{decel}},R_{\mathrm{ttc}})
@@ -280,120 +170,75 @@ The final Collision Risk Index (CRI) combines all components into a single score
                + \gamma R_{\mathrm{intent}}\bigr]
     \cdot \Gamma_{\mathrm{plr}},\;0,\;1\Big)
 \end{equation}
+The $\max(R_{\mathrm{decel}},R_{\mathrm{ttc}})$ \textbf{severity gate} prevents false alarms from small harmless values adding up by requiring at least one genuinely high danger signal. Optimized weights: $\alpha=0.20$, $\beta=0.80$, $\gamma=0.00$.
 
-The key innovation is the $\max(R_{\mathrm{decel}},R_{\mathrm{ttc}})$ \textbf{severity gate}. In traditional additive risk models, multiple small harmless values can add up and trigger a false alarm. The severity gate prevents this by requiring at least one physical danger signal (either braking distance or collision timing) to be genuinely high before the overall score can escalate. The optimized weights are: $\alpha=0.20$ (deceleration), $\beta=0.80$ (time-to-collision), and $\gamma=0.00$ (intent, disabled).
-
-\subsection{Alert Levels}
-The system triggers four alert levels based on CRI:
-\begin{itemize}
-  \item \textbf{SAFE} (CRI $< 0.30$): No danger detected
-  \item \textbf{CAUTION} (CRI $\ge 0.30$): Vehicle detected in blind spot
-  \item \textbf{WARNING} (CRI $\ge 0.60$): Close proximity or approach
-  \item \textbf{CRITICAL} (CRI $\ge 0.80$): Imminent collision risk
-\end{itemize}
-To prevent alerts from flickering on and off, the system requires 3 consecutive steps above a threshold before upgrading, and a small buffer band (0.05) before downgrading. Left and right sides are monitored independently.
-
-Fig.~\ref{fig:alert_timeline} shows the alert activity over the full simulation. Fig.~\ref{fig:cri_ts} illustrates the CRI time-series for a single vehicle pair, showing how the hysteresis mechanism prevents alert flickering during risk escalation and de-escalation.
+Four alert levels are triggered: SAFE (CRI~$<$~0.30), CAUTION ($\ge$~0.30), WARNING ($\ge$~0.60), CRITICAL ($\ge$~0.80). A hysteresis mechanism (3 consecutive steps to upgrade, 0.05 buffer to downgrade) prevents alert flickering. The CRI distribution (Fig.~\ref{fig:cri_dist}) confirms 96.0\% of observations remain SAFE.
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.9\columnwidth]{fig4_alert_timeline.png}
-  \caption{Mean alert level over the 360-second simulation. Spikes correspond to injected danger scenarios (traffic signal violations and narrow road events).}
-  \label{fig:alert_timeline}
-\end{figure}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{fig10_cri_timeseries.png}
-  \caption{CRI time-series for a single vehicle showing risk escalation and de-escalation. Horizontal lines indicate alert thresholds: CAUTION (0.30), WARNING (0.60), CRITICAL (0.80). The hysteresis requirement (3 consecutive steps) delays alert upgrades, preventing flicker.}
-  \label{fig:cri_ts}
+  \includegraphics[width=0.9\columnwidth]{fig2_cri_distribution.png}
+  \caption{CRI score distribution across 146,051 timesteps. 96.0\% remain in the SAFE region, confirming the severity gate prevents excessive warnings.}
+  \label{fig:cri_dist}
 \end{figure}
 
 % ============================================================
-% V. SCENARIO MODELLING
+% 5. SCENARIO MODELLING
 % ============================================================
-\section{Scenario Modelling}
-\label{sec:scenario}
+\section{Scenario Modelling}\label{sec:scenario}
 
-To test the system under realistic danger conditions, two conflict scenarios and a communication failure model were implemented.
+Two conflict scenarios and a communication failure model were implemented.
+\textbf{Traffic Signal Violation (TSV):} 30\% probability of ignoring red lights, creating crossing conflicts.
+\textbf{Hilly Narrow Road (HNR):} Lane width reduced to 2.8~m, friction lowered to 0.55, with 10\% aggressive overtaking probability.
+\textbf{Packet Loss:} Gilbert-Elliott two-state channel~\cite{gilbert1960} with 1\% loss (good state) and 50\% loss (bad state, ~9.1\% of time).
 
-\subsection{Traffic Signal Violation (TSV)}
-When a vehicle approaches an intersection during a red light, there is a 30\% chance it will ignore the signal and continue at full speed. This creates dangerous crossing conflicts that test the system's ability to detect side-impact collision risks.
-
-\subsection{Hilly Narrow Road (HNR)}
-On selected road segments, lane width is reduced to 2.8~metres and road friction is lowered to 0.55 (simulating wet or hilly conditions). Some vehicles (10\% probability) attempt aggressive overtaking. This tests the system's ability to handle reduced braking capability and tight lateral spaces.
-
-\subsection{Communication Packet Loss}
-Real-world wireless signals can be interrupted by buildings, other vehicles, or interference. This is modelled using a Gilbert-Elliott two-state channel~\cite{gilbert1960}: in the good state, only 1\% of packets are lost; in the bad state, 50\% are lost. The system spends about 9.1\% of the time in the bad state, creating realistic multi-packet outages that test the dead-reckoning prediction.
-
-The effect of these scenarios on risk levels is shown in Fig.~\ref{fig:scenario_cri}.
+Fig.~\ref{fig:scenario_cri} shows the effect on risk levels: TSV causes periodic spikes at intersections; HNR produces sustained elevated risk.
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.9\columnwidth]{fig6_scenario_comparison.png}
-  \caption{Mean CRI over time by scenario type. TSV events cause periodic spikes at intersections; HNR conditions cause sustained elevated risk from reduced friction and narrow lanes.}
+  \caption{Mean CRI over time by scenario type.}
   \label{fig:scenario_cri}
 \end{figure}
 
 % ============================================================
-% VI. EXPERIMENTAL SETUP
+% 6. EXPERIMENTAL SETUP
 % ============================================================
-\section{Experimental Setup}
-\label{sec:setup}
+\section{Experimental Setup}\label{sec:setup}
 
-\subsection{Simulation Environment}
-All experiments use Eclipse SUMO~\cite{sumo2018} traffic simulator running at 10~Hz (10 updates per second). The road network is a 539-edge map of the Atal Bridge corridor in Navi Mumbai, India, extracted from OpenStreetMap. The simulation runs for 360 seconds with up to 163 simultaneous vehicles, producing 146,051 total observations. All experiments use random seed 42 for reproducibility. All system parameters are listed in Table~\ref{tab:params}.
-
-\subsection{Road Network}
-The Atal Bridge network includes multi-lane roads, controlled intersections, and highway ramps — significantly more complex than the simple highway segments commonly used in V2V research. The simulated traffic models Indian conditions: high vehicle density, mixed vehicle types (sedans, SUVs, trucks), and frequent lane changes.
-
-\subsection{Parameter Reference Table}
+All experiments use Eclipse SUMO~\cite{sumo2018} at 10~Hz on a 539-edge map of the Atal Bridge corridor in Navi Mumbai, extracted from OpenStreetMap. The simulation runs 360~s with up to 163 simultaneous vehicles, producing 146,051 observations (seed~42). The network includes multi-lane roads, controlled intersections, and highway ramps --- more complex than simple highway segments in prior V2V research. Key parameters are in Table~\ref{tab:params}.
 
 \begin{table}[htbp]
-  \caption{System Parameter Reference}
+  \caption{Key System Parameters}
   \label{tab:params}
-  \renewcommand{\arraystretch}{1.2}
-  \begin{tabular}{@{}lcccp{2.2cm}@{}}
+  \renewcommand{\arraystretch}{1.15}
+  \begin{tabular}{@{}lccc@{}}
     \toprule
-    \textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Unit} & \textbf{Justification / Ref.} \\
+    \textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Unit} \\
     \midrule
-    BSM Frequency       & $1/\Delta t$              & 10   & Hz  & SAE J2945/1 \cite{sae_j2945} \\
-    Detection Range     & $R_{\max}$                & 300  & m   & DSRC hardware reach \\
-    GPS Uncertainty     & $\sigma_{\mathrm{gps}}$   & 1.5  & m   & Gaussian pos.\ limit \\
-    Reaction Time       & $T_{\mathrm{react}}$      & 1.2  & s   & AASHTO 85th pct.\ \cite{aashto2018} \\
-    Baseline Friction   & $\mu$                     & 0.70 & --  & Dry asphalt \\
-    Lane Width          & $W_{\mathrm{lane}}$       & 3.5  & m   & Mean global span \\
-    Critical TTC        & $\mathrm{TTC}_{\mathrm{crit}}$ & 4.0 & s & Warning threshold \\
-    Maximum TTC         & $\mathrm{TTC}_{\max}$     & 8.0  & s   & Attenuation edge \\
-    Safe Boundary       & $\theta_1$                & 0.30 & --  & CAUTION trigger \\
-    Warning Boundary    & $\theta_2$                & 0.60 & --  & WARNING trigger \\
-    Critical Boundary   & $\theta_3$                & 0.80 & --  & CRITICAL trigger \\
-    Decel.\ Weight      & $\alpha$                  & 0.20 & --  & Optimized split \\
-    TTC Weight          & $\beta$                   & 0.80 & --  & Optimized split \\
-    Intent Weight       & $\gamma$                  & 0.00 & --  & Disabled (5-field) \\
-    Brake Decay         & $K_{\mathrm{brake}}$      & 1.50 & --  & Exponential steepness \\
-    PLR Penalty         & $\varepsilon$             & 0.30 & --  & Moderate caution \\
-    Hysteresis Steps    & $N_H$                     & 3    & --  & Anti-flicker guard \\
-    Downgrade Band      & $\delta_h$                & 0.05 & --  & Oscillation guard \\
-    Lateral Tolerance   & $\Delta W$                & 0.5  & m   & GPS/width margin \\
-    Low-Speed Guard     & $v_{\min,\theta}$         & 0.5  & m/s & Heading hold threshold \\
-    Good$\to$Bad prob.  & $p_{G \to B}$             & 0.01 & --  & Gilbert-Elliott \cite{gilbert1960} \\
-    Bad$\to$Good prob.  & $p_{B \to G}$             & 0.10 & --  & Gilbert-Elliott \cite{gilbert1960} \\
+    BSM Frequency       & $1/\Delta t$              & 10   & Hz  \\
+    Detection Range     & $R_{\max}$                & 300  & m   \\
+    GPS Uncertainty     & $\sigma_{\mathrm{gps}}$   & 1.5  & m   \\
+    Reaction Time       & $T_{\mathrm{react}}$      & 1.2  & s   \\
+    Baseline Friction   & $\mu$                     & 0.70 & --  \\
+    Critical TTC        & $\mathrm{TTC}_{\mathrm{crit}}$ & 4.0 & s \\
+    Maximum TTC         & $\mathrm{TTC}_{\max}$     & 8.0  & s   \\
+    Decel.\ / TTC Weight & $\alpha$ / $\beta$       & 0.20 / 0.80 & -- \\
+    Alert Thresholds    & $\theta_{1,2,3}$          & 0.30, 0.60, 0.80 & -- \\
+    Hysteresis Steps    & $N_H$                     & 3    & --  \\
+    Good$\to$Bad / Bad$\to$Good & $p_{GB}$ / $p_{BG}$ & 0.01 / 0.10 & -- \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\subsection{AI Model Configuration}
-The XGBoost classifier~\cite{chen2016xgboost} serves as a backup detection layer alongside the physics model. From the 5 BSM fields, 15 features are computed including speed, acceleration, braking status, gap distance, and relative speed. Scenario labels are excluded from the feature set to ensure generalization. Because dangerous events are rare (only 54 CRITICAL samples out of 146,051), SMOTE oversampling~\cite{smote2002} is used to balance the training data. The model uses 5-fold time-series cross-validation with a 75\%/25\% train/test split.
+An XGBoost classifier~\cite{chen2016xgboost} serves as an exploratory baseline. From the 5 BSM fields, 15 features are computed (~11 unique after removing correlated pairs). SMOTE~\cite{smote2002} balances the training data (only 54 CRITICAL samples in 146,051). The model uses 5-fold time-series cross-validation with 75/25 train/test split.
 
 % ============================================================
-% VII. RESULTS AND ANALYSIS
+% 7. RESULTS AND ANALYSIS
 % ============================================================
-\section{Results and Analysis}
-\label{sec:results}
+\section{Results and Analysis}\label{sec:results}
 
 \subsection{Overall Performance}
-The system was evaluated over 146,051 observations across three scenario types: normal traffic (49.6\%), HNR (31.0\%), and TSV (19.3\%). Table~\ref{tab:perf} compares all four tested methods.
+The system was evaluated over 146,051 observations: normal traffic (49.6\%), HNR (31.0\%), TSV (19.3\%). Table~\ref{tab:perf} compares all methods.
 
 \begin{table}[htbp]
   \caption{System Performance Comparison}
@@ -403,36 +248,39 @@ The system was evaluated over 146,051 observations across three scenario types: 
     \toprule
     \textbf{Method} & \textbf{AUC} & \textbf{Notes} \\
     \midrule
-    V3.0 Physics Model (CRI) & \textbf{0.9869} & Primary system --- highest AUC \\
-    XGBoost Hybrid Predictor & 0.7725 & Pattern-based backup \\
+    V3.0 Physics Model (CRI) & \textbf{0.9869} & Primary system \\
     TTC Kinematic Baseline   & 0.8886 & Euro NCAP-equivalent \\
-    Static Box Baseline      & 0.8737 & Fixed-geometry detection zone \\
+    Static Box Baseline      & 0.8737 & Fixed-geometry zone \\
+    XGBoost Classifier       & 0.7725 & Exploratory ML \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \subsection{Ground Truth Definition}
-Since the simulation does not produce actual collision labels, a near-miss event is defined as ground truth: a positive event is flagged when a target is simultaneously in the blind spot, within 1.0~m gap or 2.0~s TTC, with relative speed above 0.5~m/s, and ego speed above 2.0~m/s. SUMO-reported physical collisions (27 events) are also treated as authoritative positives. This yields a positive rate of 2.37\% (3,465 events out of 146,051 observations).
+\textbf{Tier~1:} SUMO's collision engine reports 27 physical contact events (model-independent).
+\textbf{Tier~2:} Kinematic near-miss proxy flags events when a target is in the blind spot zone within 1.0~m gap or 2.0~s TTC, with relative speed $>$~0.5~m/s and ego speed $>$~2.0~m/s. Combined positive rate: 2.37\% (3,465/146,051).
 
-\subsection{ROC Analysis}
-Fig.~\ref{fig:roc} shows the ROC curves for all four methods. The V3.0 physics model achieves the highest AUC of 0.9869, showing strong ability to distinguish safe conditions from genuine blind-spot hazards. The XGBoost model achieves 0.7725 AUC. The physics model also achieves an AUPRC (Area Under Precision-Recall Curve) of 0.677, far above the random baseline of 0.024. The precision-recall perspective (Fig.~\ref{fig:pr}) is particularly informative given the 2.37\% positive rate, where ROC-AUC can be misleadingly optimistic.
+\textbf{Caveat:} The Tier~2 proxy shares structural inputs with the CRI model, so the proxy-based AUC measures rank-ordering consistency, not independent validation. Against SUMO collisions only, AUC = 0.9416 ($n$=27), providing a model-independent bound. We also report AUPRC = 0.677 (vs.\ 0.024 random baseline).
+
+\subsection{ROC and PR Analysis}
+Fig.~\ref{fig:roc} shows ROC curves. The physics model (AUC=0.9869) outperforms both traditional baselines and XGBoost (0.7725). The precision-recall curve (Fig.~\ref{fig:pr}) is particularly informative given the 2.37\% positive rate.
 
 \begin{figure}[htbp]
   \centering
- \includegraphics[width=\columnwidth]{fig1_roc_curve.png}
-  \caption{ROC curves for four detection methods. The V3.0 physics model (AUC=0.9869) achieves the best discrimination, outperforming both traditional baselines and the XGBoost hybrid (AUC=0.7725).}
+  \includegraphics[width=\columnwidth]{fig1_roc_curve.png}
+  \caption{ROC curves for four detection methods.}
   \label{fig:roc}
 \end{figure}
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\columnwidth]{fig9_pr_curve.png}
-  \caption{Precision-Recall curve for the physics model (AUPRC=0.677). The dashed line shows the random baseline (positive rate = 0.024). PR curves are more informative than ROC for imbalanced datasets.}
+  \caption{Precision-Recall curve (AUPRC=0.677 vs.\ 0.024 random baseline).}
   \label{fig:pr}
 \end{figure}
 
-\subsection{AI Model Results}
-The XGBoost model achieves 80.7\% overall accuracy on the holdout test set. Because the dataset is 96\% SAFE-class, a trivial always-SAFE baseline would score higher; the model's value lies in detecting non-SAFE events. Table~\ref{tab:ai_perf} shows per-class performance. The model successfully detects CAUTION (65\% recall) and WARNING (57\% recall) events, but fails on the CRITICAL class (0\% recall) due to extreme rarity — only 13 CRITICAL test samples exist. This failure is systematic: cross-validation also yields 0\% CRITICAL recall across all five folds, confirming insufficient training samples rather than a statistical anomaly. The low precision for CAUTION (0.12) and WARNING (0.11) reflects inherent difficulty distinguishing intermediate risk levels; however, these errors are conservative (over-alerting rather than missed detections). The confusion matrix (Fig.~\ref{fig:confusion}) visualizes this pattern.
+\subsection{Exploratory AI Model Results}
+The XGBoost AUC (0.7725) falls below both traditional baselines, demonstrating that data-driven models struggle with extreme class imbalance. Table~\ref{tab:ai_perf} shows per-class performance: CAUTION recall is 65\%, WARNING 57\%, but CRITICAL is 0\% (only 13 test samples). This failure is systematic across all cross-validation folds. The confusion matrix (Fig.~\ref{fig:confusion}) visualizes this pattern. Feature importance analysis shows braking dynamics (0.34) and gap distance (0.14) dominate.
 
 \begin{table}[htbp]
   \caption{AI Model Class Performance}
@@ -440,41 +288,25 @@ The XGBoost model achieves 80.7\% overall accuracy on the holdout test set. Beca
   \renewcommand{\arraystretch}{1.2}
   \begin{tabular}{@{}lcccc@{}}
     \toprule
-    \textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{Support} \\
+    \textbf{Class} & \textbf{Prec.} & \textbf{Recall} & \textbf{F1} & \textbf{Support} \\
     \midrule
-    SAFE     & 0.99        & 0.82        & 0.90        & 35,047 \\
-    CAUTION  & 0.12        & 0.65        & 0.20        & 907    \\
-    WARNING  & 0.11        & 0.57        & 0.18        & 546    \\
-    CRITICAL & 0.00        & 0.00        & 0.00        & 13     \\
+    SAFE     & 0.99 & 0.82 & 0.90 & 35,047 \\
+    CAUTION  & 0.12 & 0.65 & 0.20 & 907    \\
+    WARNING  & 0.11 & 0.57 & 0.18 & 546    \\
+    CRITICAL & 0.00 & 0.00 & 0.00 & 13     \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Feature importance analysis (Fig.~\ref{fig:feat_imp}) shows that the most important features are braking dynamics (decel=0.34) and gap distance (max\_gap=0.14). Scenario labels are excluded from the feature set entirely, ensuring the model generalizes from physical behavior rather than memorizing specific scenarios. The feature correlation matrix (Fig.~\ref{fig:feat_corr}) reveals moderate redundancy between derived features (e.g., speed and speed\_kmh), suggesting future feature set reduction.
-
-\begin{figure}[htbp]
-  \centering
- \includegraphics[width=\columnwidth]{fig3_feature_importance.png}
-  \caption{XGBoost feature importance (15 features). Deceleration and gap distance dominate. Scenario labels are excluded from the feature set.}
-  \label{fig:feat_imp}
-\end{figure}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{fig12_feature_correlation.png}
-  \caption{Feature correlation heatmap. Notable redundancies include speed/speed\_kmh ($r=1.0$) and rel\_speed/closing\_speed ($r=1.0$), suggesting potential for feature set reduction.}
-  \label{fig:feat_corr}
-\end{figure}
-
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\columnwidth]{fig7_confusion_matrix.png}
-  \caption{Four-class confusion matrix: XGBoost predictions vs.\ physics-model CRI labels. The model correctly identifies most SAFE events; intermediate classes show over-alerting. CRITICAL detection fails due to extreme class rarity (54 total samples).}
+  \caption{Confusion matrix: XGBoost predictions vs.\ CRI labels. CRITICAL detection fails due to extreme rarity (54 total samples).}
   \label{fig:confusion}
 \end{figure}
 
-\subsection{Per-Scenario Performance}
-To verify the system works across different hazard types, AUC was computed separately for each scenario (Table~\ref{tab:scenario_auc}). The narrow spread ($\Delta$AUC~$<$~0.002) confirms the system is robust across different traffic conditions.
+\subsection{Per-Scenario and Multi-Seed Robustness}
+Per-scenario AUC (Table~\ref{tab:scenario_auc}) shows narrow spread ($\Delta$AUC~$<$~0.002), confirming robustness across traffic conditions. Multi-seed testing (Table~\ref{tab:multiseed}) with six random seeds confirms stability: mean AUC = $0.9954 \pm 0.0041$.
 
 \begin{table}[htbp]
   \caption{Per-Scenario AUC (Physics Model)}
@@ -482,7 +314,7 @@ To verify the system works across different hazard types, AUC was computed separ
   \renewcommand{\arraystretch}{1.2}
   \begin{tabular}{@{}lccc@{}}
     \toprule
-    \textbf{Scenario} & \textbf{AUC} & \textbf{$n$ (rows)} & \textbf{Positive events} \\
+    \textbf{Scenario} & \textbf{AUC} & \textbf{$n$} & \textbf{Positives} \\
     \midrule
     Normal traffic & 0.9874 & 72,494 & 1,619 \\
     TSV            & 0.9877 & 28,246 & 653   \\
@@ -491,140 +323,90 @@ To verify the system works across different hazard types, AUC was computed separ
   \end{tabular}
 \end{table}
 
-Fig.~\ref{fig:speed_cri} shows the relationship between ego vehicle speed and CRI across scenarios. Higher speeds generally produce higher CRI values, with HNR scenarios showing elevated risk at lower speeds due to reduced friction.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{fig13_speed_cri_scatter.png}
-  \caption{Ego speed vs.\ maximum CRI, colored by scenario type (5,000 sampled rows). HNR scenarios show elevated risk at lower speeds due to reduced friction and narrow lanes.}
-  \label{fig:speed_cri}
-\end{figure}
-
-Fig.~\ref{fig:calibration} shows the calibration plot, assessing whether CRI scores correspond to actual danger frequencies.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{fig11_calibration.png}
-  \caption{Calibration plot: predicted CRI vs.\ observed positive fraction. The proxy ground truth uses kinematic near-miss events (2.37\% positive rate).}
-  \label{fig:calibration}
-\end{figure}
+\begin{table}[htbp]
+  \caption{Multi-Seed Results ($N=6$)}
+  \label{tab:multiseed}
+  \renewcommand{\arraystretch}{1.2}
+  \begin{tabular}{@{}lcc@{}}
+    \toprule
+    \textbf{Metric} & \textbf{Physics (V3.0)} & \textbf{XGBoost} \\
+    \midrule
+    Seed 42 (primary)   & 0.9869 & 0.7725 \\
+    Seeds 10--50 (mean) & $0.9971 \pm 0.0007$ & $0.8985 \pm 0.0095$ \\
+    \textbf{All 6 seeds} & $\mathbf{0.9954 \pm 0.0041}$ & $0.8775 \pm 0.0520$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \subsection{Ablation Study}
-To understand how each component contributes to performance, five configurations were tested with different weight settings (Table~\ref{tab:ablation}). The key finding is that including the intent component ($\gamma=0.20$, configs A3/A4) without turn signal data causes a 44\% drop in F1 score, validating the decision to disable it ($\gamma=0$). Configurations A3 and A4 produce identical F1 because the lateral TTC component contributes negligible additional risk when the intent weight ($\gamma=0.20$) already dominates the score reduction.
+Five configurations were tested (Table~\ref{tab:ablation}). Including intent ($\gamma=0.20$, A3/A4) without turn signals causes 44\% F1 drop, validating $\gamma=0$. A5 ($\alpha{=}0.20, \beta{=}0.80$) is selected over A2 ($\alpha{=}0.50, \beta{=}0.50$) for better AUC rank-ordering (0.9869 vs.\ 0.9842) despite nearly identical single-threshold F1.
 
 \begin{table}[htbp]
-  \caption{Ablation Study Results (3,600 steps)}
+  \caption{Ablation Study Results}
   \label{tab:ablation}
-  \begin{threeparttable}
   \renewcommand{\arraystretch}{1.2}
   \begin{tabular}{@{}ccccccc@{}}
     \toprule
     \textbf{Config} & $\alpha$ & $\beta$ & $\gamma$ & \textbf{Lat TTC}
-      & \textbf{F1 ($\theta$=0.60)} \\
+      & \textbf{F1 (0.60)} & \textbf{F1 (0.80)} \\
     \midrule
-    A1 & 1.00 & 0.00 & 0.00 & $\times$ & 0.6521 \\
-    A2 & 0.50 & 0.50 & 0.00 & $\times$ & 0.5829 \\
-    A3 & 0.35 & 0.45 & 0.20 & $\times$ & 0.3284 \\
-    A4 & 0.35 & 0.45 & 0.20 & $\checkmark$ & 0.3284 \\
+    A1 & 1.00 & 0.00 & 0.00 & $\times$ & 0.652 & 0.519 \\
+    A2 & 0.50 & 0.50 & 0.00 & $\times$ & 0.583 & 0.491 \\
+    A3 & 0.35 & 0.45 & 0.20 & $\times$ & 0.328 & 0.216 \\
+    A4 & 0.35 & 0.45 & 0.20 & $\checkmark$ & 0.328 & 0.216 \\
     \textbf{A5} & \textbf{0.20} & \textbf{0.80} & \textbf{0.00}
-      & $\checkmark$ & \textbf{0.5830} \\
+      & $\checkmark$ & \textbf{0.583} & \textbf{0.494} \\
     \bottomrule
   \end{tabular}
-  \end{threeparttable}
 \end{table}
 
 \subsection{Sensitivity Analysis}
-The system's robustness was tested by varying key parameters (Fig.~\ref{fig:sensitivity}). The system maintains strong performance even with GPS noise up to 3.0~m and packet loss rates up to 20\%.
+The system maintains strong performance under parameter variation (Fig.~\ref{fig:sensitivity}): robust with GPS noise up to 3.0~m and packet loss up to 20\%.
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\columnwidth]{fig8_sensitivity_analysis.png}
-  \caption{Sensitivity analysis: the system remains robust under varying GPS noise, packet loss, TTC threshold, alert threshold, and road friction values.}
+  \caption{Sensitivity analysis across GPS noise, packet loss, TTC threshold, alert threshold, and friction values.}
   \label{fig:sensitivity}
 \end{figure}
 
-\subsection{Multi-Seed Robustness}
-To confirm results are not dependent on a single random traffic pattern, the simulation was repeated with five different random seeds (Table~\ref{tab:multiseed}). The physics model AUC remains extremely consistent ($\sigma=0.0007$).
-
-\begin{table}[htbp]
-  \caption{Multi-Seed Results (Mean $\pm$ Std, $N=5$)}
-  \label{tab:multiseed}
-  \begin{threeparttable}
-  \renewcommand{\arraystretch}{1.2}
-  \begin{tabular}{@{}lcc@{}}
-    \toprule
-    \textbf{Metric} & \textbf{Physics Model (V3.0)} & \textbf{XGBoost Hybrid} \\
-    \midrule
-    \textbf{AUC}                       & $0.9971 \pm 0.0007$ & $0.8985 \pm 0.0095$ \\
-    \bottomrule
-  \end{tabular}
-  \begin{tablenotes}
-    \footnotesize
-    \item AUC is threshold-independent and serves as the primary evaluation metric.
-    Low variance ($\sigma{=}0.0007$) confirms stability across traffic seeds.
-    Raw per-seed data available in \texttt{Outputs/multi\_seed\_results.csv}.
-  \end{tablenotes}
-  \end{threeparttable}
-\end{table}
-
 % ============================================================
-% VIII. REAL-WORLD DEPLOYMENT PATHWAY
+% 8. DEPLOYMENT AND DISCUSSION
 % ============================================================
-\section{Real-World Deployment Pathway}
-\label{sec:deployment}
+\section{Deployment and Discussion}\label{sec:discussion}
 
-Deploying this system on real vehicles requires only a standard DSRC or C-V2X On-Board Unit (OBU) that can transmit the 5-field BSM. Because the system uses only position, speed, and acceleration values, it does not need access to the vehicle's internal computer network for turn signals or steering data. This makes it compatible with existing aftermarket V2V communication kits.
+\subsection{Deployment Pathway}\label{sec:deployment}
+The system requires only a standard DSRC or C-V2X On-Board Unit transmitting the 5-field BSM, compatible with aftermarket V2V kits without vehicle CAN bus access. The CRI logic is packaged as a ROS2 node completing a cycle with 15 targets in 4.7~ms --- well within the 100~ms SAE J2945/1 budget~\cite{sae_j2945}. \textbf{Current status:} All results are from simulation; hardware testing is planned as future work.
 
-For embedded hardware deployment, the CRI logic has been packaged as a ROS2 node that converts GPS coordinates into the local coordinate frame used by the physics engine. A single processing cycle with 15 simultaneous targets completes in 4.7~ms, well within the 100~ms time budget required by the SAE J2945/1 standard~\cite{sae_j2945}.
-
-The XGBoost model is exported in ONNX format for efficient embedded inference. The physics model runs as the primary decision-maker, while the AI model provides backup detection on a parallel path — maintaining safety traceability.
-
-\textbf{Current status:} All results in this paper are from simulation. Hardware testing on physical vehicles is planned as future work. The ROS2 wrapper and ONNX export have been validated in software-only testing.
-
-% ============================================================
-% IX. DISCUSSION
-% ============================================================
-\section{Discussion}
-\label{sec:discussion}
-
-The main finding is that the transparent physics model (AUC~=~0.9869) significantly outperforms the machine learning model (AUC~=~0.7725) for blind-spot risk assessment, even though both use the same 5-field BSM input. The severity gate — requiring at least one physical danger signal to be genuinely high — is the key to this result. The ablation study confirms: removing the severity gate by adding the unreliable intent component ($\gamma=0.20$) reduces F1 by 44\%.
-
-The XGBoost model provides value as a pattern-based backup for CAUTION (65\% recall) and WARNING (57\% recall) detection, but fails on CRITICAL events due to extreme class rarity (only 54 samples in 146,051 observations). Scenario labels are excluded from its feature set, and its importance rankings show it relies on physical measurements (braking, gap distance), suggesting it can generalize with more training data.
-
-The system maintains consistent performance across normal traffic, traffic signal violations, and narrow road scenarios ($\Delta$AUC~$<$~0.002), and across five independent random traffic seeds ($\sigma=0.0007$).
+\subsection{Key Findings}
+The physics model (proxy AUC = 0.9869; SUMO-collision AUC = 0.9416) significantly outperforms the XGBoost model (0.7725) and both traditional baselines. The severity gate is the key innovation --- removing it by adding intent ($\gamma=0.20$) reduces F1 by 44\%. The XGBoost underperformance demonstrates that with only 54 CRITICAL events in 146,051 observations, physics-informed models with domain priors outperform data-driven approaches~\cite{chen2016xgboost}. Performance is consistent across scenarios ($\Delta$AUC $<$ 0.002) and seeds ($\sigma=0.0041$).
 
 \subsection{Limitations}
 \begin{enumerate}
-  \item \textbf{Simulation only.} Results are from traffic simulation. Real-world V2V conditions may differ.
-  \item \textbf{Proxy ground truth.} The near-miss definition shares inputs with the CRI model, potentially inflating measured accuracy. Testing against real collision data is needed.
-  \item \textbf{No pedestrians or cyclists.} The system only detects vehicles with V2V capability.
-  \item \textbf{Single road network.} Testing was done on one road network. More networks should be tested.
-  \item \textbf{No turn signals.} The 5-field BSM constraint means lane-change intent cannot be reliably predicted.
-  \item \textbf{Insufficient CRITICAL samples.} The simulation produced only 54 CRITICAL-class events (CRI~$\geq$~0.80) out of 146,051 observations, preventing the AI model from learning this class. Longer simulations or targeted scenario injection are needed.
-  \item \textbf{No security measures.} The system trusts all received data. Fake or manipulated messages could cause incorrect risk assessments.
+  \item \textbf{Simulation only.} Real-world V2V conditions may differ.
+  \item \textbf{Proxy ground truth overlap.} The Tier~2 proxy shares inputs with CRI; SUMO-collision AUC (0.9416, $n{=}27$) provides a model-independent bound.
+  \item \textbf{No pedestrians/cyclists.} Only V2V-equipped vehicles are detected.
+  \item \textbf{Single road network.} More networks should be tested.
+  \item \textbf{No turn signals.} Lane-change intent cannot be reliably predicted with 5-field BSM.
+  \item \textbf{Insufficient CRITICAL samples.} Only 54 events prevent AI model learning.
+  \item \textbf{No security measures.} Fake messages could cause incorrect assessments.
 \end{enumerate}
 
 % ============================================================
-% X. CONCLUSION
+% 9. CONCLUSION
 % ============================================================
-\section{Conclusion}
-\label{sec:conclusion}
+\section{Conclusion}\label{sec:conclusion}
 
-This paper presented a V2V Blind Spot Detection system that uses only 5 basic data fields from the standard vehicle safety message. By not requiring additional data like turn signals or yaw rate, the system works with all types of vehicles equipped with DSRC or C-V2X communication.
+This paper presented a V2V Blind Spot Detection system using only 5 BSM fields, compatible with all DSRC/C-V2X equipped vehicles. The severity-gated CRI prevents false alarms by requiring genuinely high danger signals. Tested over 146,051 observations, the physics model achieved AUC = 0.9869 (0.9416 against SUMO collisions), outperforming TTC (0.8886), static box (0.8737), and XGBoost (0.7725) baselines.
 
-The core innovation is the Collision Risk Index (CRI) with a severity gate that prevents false alarms by requiring at least one physical danger signal to be genuinely high before triggering a warning. Tested over 146,051 observations on a real road network with injected danger scenarios, the physics model achieved an AUC of 0.9869 — significantly outperforming both traditional TTC (0.8886) and static box (0.8737) detection methods. The complementary XGBoost model provides backup detection for CAUTION and WARNING events but requires more CRITICAL training samples to achieve reliable high-severity detection.
-
-Future work priorities include: (1)~testing on real vehicles with commercial V2V hardware; (2)~evaluation against real collision data; (3)~longer simulations to generate sufficient CRITICAL training samples for the AI model; and (4)~testing on diverse road networks. The lightweight, transparent system provides a strong foundation for cooperative vehicle safety.
+Future work: (1)~real vehicle testing with commercial V2V hardware; (2)~evaluation against real collision data; (3)~longer simulations for more CRITICAL training samples; (4)~diverse road networks; (5)~feature set reduction to eliminate redundant pairs.
 
 % ============================================================
 % ACKNOWLEDGEMENTS
 % ============================================================
-\section*{Acknowledgements}
-
-The authors thank the Eclipse SUMO development team (German Aerospace
-Center, DLR) for the open-source traffic simulation platform, and the
-OpenStreetMap contributors for the Atal Bridge road network data used in
-this study.
+\begin{acknowledgements}
+The authors thank the Eclipse SUMO development team (DLR) for the open-source traffic simulation platform, and OpenStreetMap contributors for the Atal Bridge road network data.
+\end{acknowledgements}
 
 % ============================================================
 % REFERENCES
@@ -640,81 +422,85 @@ SAE International, ``On-Board System Requirements for V2V Safety
 Communications,'' SAE Standard J2945/1\_201603, Mar.\ 2016.
 
 \bibitem{ieee_80211p}
-IEEE, ``IEEE Standard for Information Technology --- Telecommunications and
-Information Exchange Between Systems --- Local and Metropolitan Area
-Networks --- Specific Requirements Part~11: Wireless LAN Medium Access
-Control (MAC) and Physical Layer (PHY) Specifications Amendment~6: Wireless
-Access in Vehicular Environments,'' IEEE Std 802.11p-2010, Jul.\ 2010.
+IEEE, ``IEEE Standard for Information Technology --- Wireless Access in
+Vehicular Environments,'' IEEE Std 802.11p-2010, Jul.\ 2010.
 
 \bibitem{3gpp2016}
-3GPP, ``Technical Specification Group Radio Access Network; Study on
-LTE-based V2X Services,'' 3GPP TR 36.885 V14.0.0, Jun.\ 2016.
+3GPP, ``Study on LTE-based V2X Services,'' 3GPP TR 36.885 V14.0.0, Jun.\ 2016.
 
 \bibitem{euroncap2019}
-Euro NCAP, ``Lane Change Assist System (LCAS) Test Protocol,'' Euro NCAP
-Technical Bulletin, Version 1.0, 2019.
+Euro NCAP, ``Lane Change Assist System (LCAS) Test Protocol,'' Version 1.0, 2019.
 
 \bibitem{aashto2018}
-American Association of State Highway and Transportation Officials
-(AASHTO), \textit{A Policy on Geometric Design of Highways and Streets},
+AASHTO, \textit{A Policy on Geometric Design of Highways and Streets},
 7th ed.\ Washington, DC, 2018.
 
 \bibitem{gilbert1960}
-E.~N. Gilbert, ``Capacity of a burst-noise channel,'' \textit{Bell System
-Technical Journal}, vol.~39, no.~5, pp.~1253--1265, Sep.\ 1960.
+E.~N. Gilbert, ``Capacity of a burst-noise channel,'' \textit{Bell Syst.
+Tech. J.}, vol.~39, no.~5, pp.~1253--1265, Sep.\ 1960.
 
 \bibitem{chen2016xgboost}
 T.~Chen and C.~Guestrin, ``XGBoost: A scalable tree boosting system,'' in
-\textit{Proc.\ 22nd ACM SIGKDD Int.\ Conf.\ Knowledge Discovery and Data
-Mining (KDD)}, San Francisco, CA, USA, Aug.\ 2016, pp.~785--794.
+\textit{Proc.\ ACM SIGKDD}, San Francisco, CA, Aug.\ 2016, pp.~785--794.
 
 \bibitem{sumo2018}
-P.~A. Lopez, M.~Behrisch, L.~Bieker-Walz, J.~Erdmann, Y.~Fl\"{o}tter\"{o}d,
-R.~Hilbrich, L.~L\"{u}cken, J.~Rummel, P.~Wagner, and E.~Wie\ss{}ner,
-``Microscopic traffic simulation using SUMO,'' in \textit{Proc.\ IEEE 21st
-Int.\ Conf.\ Intelligent Transportation Systems (ITSC)}, Maui, HI, USA,
-Nov.\ 2018, pp.~2575--2582.
+P.~A. Lopez \textit{et~al.}, ``Microscopic traffic simulation using SUMO,''
+in \textit{Proc.\ IEEE ITSC}, Maui, HI, Nov.\ 2018, pp.~2575--2582.
 
 \bibitem{who2023}
 World Health Organization, ``Global Status Report on Road Safety 2023,''
-WHO, Geneva, Switzerland, Dec.\ 2023.
+WHO, Geneva, Dec.\ 2023.
 
 \bibitem{morth2023}
-Ministry of Road Transport and Highways (MoRTH), ``Road Accidents in India
-2022,'' Government of India, Transport Research Wing, New Delhi, Oct.\ 2023.
+MoRTH, ``Road Accidents in India 2022,'' Government of India, New Delhi,
+Oct.\ 2023.
 
 \bibitem{mousa2021}
-A.~Mousa, M.~M. Abdel-Aty, J.~Yuan, \textit{et~al.},
-``Vehicle-to-vehicle communication for blind spot detection,'' \textit{IEEE
-Transactions on Intelligent Transportation Systems}, vol.~22, no.~5,
+A.~Mousa \textit{et~al.}, ``Vehicle-to-vehicle communication for blind spot
+detection,'' \textit{IEEE Trans. Intell. Transp. Syst.}, vol.~22, no.~5,
 pp.~3120--3131, May 2021.
 
 \bibitem{festag2014}
 A.~Festag, ``Cooperative intelligent transport systems standards in
-Europe,'' \textit{IEEE Communications Magazine}, vol.~52, no.~12,
-pp.~166--172, Dec.\ 2014.
+Europe,'' \textit{IEEE Commun. Mag.}, vol.~52, no.~12, pp.~166--172, Dec.\ 2014.
 
 \bibitem{biswas2006}
 S.~Biswas, R.~Tatchikou, and F.~Dion, ``Vehicle-to-vehicle wireless
 communication protocols for enhancing highway traffic safety,'' \textit{IEEE
-Communications Magazine}, vol.~44, no.~1, pp.~74--82, Jan.\ 2006.
+Commun. Mag.}, vol.~44, no.~1, pp.~74--82, Jan.\ 2006.
 
 \bibitem{smote2002}
-N.~Chawla, K.~Bowyer, L.~Hall, and W.~Kegelmeyer, ``SMOTE: Synthetic
-minority over-sampling technique,'' \textit{Journal of Artificial
-Intelligence Research}, vol.~16, pp.~321--357, Jun.\ 2002.
+N.~Chawla \textit{et~al.}, ``SMOTE: Synthetic minority over-sampling
+technique,'' \textit{J. Artif. Intell. Res.}, vol.~16, pp.~321--357, 2002.
 
 \bibitem{kim2015}
-B.~Kim, K.~Yi, H.-J.~Yoo, H.-J.~Chong, and B.~Ko, ``An IMM/EKF approach
-for enhanced multitarget state estimation for application to integrated
-threat assessment,'' \textit{IEEE Trans.\ Veh.\ Technol.}, vol.~64,
-no.~3, pp.~876--889, Mar.\ 2015.
+B.~Kim \textit{et~al.}, ``An IMM/EKF approach for enhanced multitarget
+state estimation for integrated threat assessment,'' \textit{IEEE Trans.
+Veh. Technol.}, vol.~64, no.~3, pp.~876--889, Mar.\ 2015.
 
 \bibitem{rawashdeh2008}
 Z.~A. Rawashdeh and S.~M.~I. Mahmud, ``A novel V2V-based blind spot
-detection system,'' in \textit{Proc.\ IEEE 68th Veh.\ Technol.\ Conf.\
-(VTC-Fall)}, Calgary, AB, Canada, Sep.\ 2008, pp.~1--5.
+detection system,'' in \textit{Proc.\ IEEE VTC-Fall}, Calgary, AB, Sep.\ 2008,
+pp.~1--5.
 
 \end{thebibliography}
+
+% ============================================================
+% AUTHOR BIOGRAPHIES
+% ============================================================
+\bigskip
+\noindent\textbf{Omkar Kadam} received his B.E.\ degree in Information Technology from Terna Engineering College, Navi Mumbai, India. His research interests include vehicular communication systems, intelligent transportation, and machine learning for safety-critical applications.
+
+\bigskip
+\noindent\textbf{Abhinav Prasad} received his B.E.\ degree in Information Technology from Terna Engineering College, Navi Mumbai, India. His research interests include embedded systems and V2V communication protocols.
+
+\bigskip
+\noindent\textbf{Gauri Phanse} received her B.E.\ degree in Information Technology from Terna Engineering College, Navi Mumbai, India. Her research interests include data analytics and intelligent transportation systems.
+
+\bigskip
+\noindent\textbf{Afraz Khan} received his B.E.\ degree in Information Technology from Terna Engineering College, Navi Mumbai, India. His research interests include simulation-based testing and vehicular networks.
+
+\bigskip
+\noindent\textbf{Vaishali Khairnar} is an Assistant Professor in the Department of Information Technology at Terna Engineering College, Navi Mumbai, India. Her research interests include wireless communication, vehicular ad-hoc networks (VANETs), and intelligent transportation systems.
 
 \end{document}

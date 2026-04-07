@@ -221,13 +221,15 @@ The main simulation script `v2v_bsd_simulation.py` accepts the following argumen
 | :--- | :--- |
 | Total observations | 146,051 |
 | Unique target vehicles | 623 |
-| Physics model AUC | 0.9869 |
-| XGBoost hybrid AUC | 0.7725 |
-| XGBoost overall accuracy | 80.66% |
-| XGBoost CAUTION recall | 65% |
-| XGBoost WARNING recall | 57% |
-| XGBoost CRITICAL recall | 0% (13 test samples) |
+| Physics model AUC (proxy) | 0.9869 |
+| Physics model AUC (SUMO collisions only) | 0.9416 (n=27) |
+| Physics model AUPRC | 0.677 (vs. 0.024 random baseline) |
+| Multi-seed AUC (6 seeds) | 0.9954 ± 0.0041 |
+| TTC kinematic baseline AUC | 0.8886 |
+| Static box baseline AUC | 0.8737 |
+| XGBoost classifier AUC (exploratory) | 0.7725 |
 | Ground truth positive rate | 2.37% (3,465 events) |
+| SUMO-reported collisions | 27 |
 | Normal scenario rows | 72,494 |
 | HNR scenario rows | 45,311 |
 | TSV scenario rows | 28,246 |
@@ -248,7 +250,7 @@ The `ros2_wgs84_wrapper.py` script provides a ROS2 node that converts WGS84 coor
 
 1. **Simulation-only validation**: All results come from SUMO microscopic simulation. Real-world V2V channel impairments, hardware latencies, and multipath effects may differ from the Gilbert-Elliott model used here.
 2. **Single network topology**: Evaluation is limited to the Atal Bridge corridor (Navi Mumbai). Generalization to other road geometries is untested.
-3. **Proxy ground truth**: The kinematic near-miss ground truth shares structural inputs with the CRI (position, speed, gap), which may inflate measured AUC. Real collision labels from instrumented vehicles would provide more rigorous evaluation.
+3. **Proxy ground truth circularity**: The kinematic near-miss proxy shares structural inputs with the CRI (position, speed, gap), which inflates the proxy-based AUC. The SUMO-collision AUC (0.9416, n=27) provides a model-independent lower bound. Real collision labels from instrumented vehicles would provide more rigorous evaluation.
 4. **Low-speed heading uncertainty**: Below 0.5 m/s, heading is held constant via dead reckoning because GPS jitter dominates position deltas.
 5. **No intent estimation**: Lane-change intent from lateral drift alone performs poorly without turn signal data; gamma is set to 0.00.
 6. **Sparse CRITICAL samples**: Only 54 CRITICAL events in the dataset (CRI >= 0.80), limiting AI model generalization for the highest-risk class.
