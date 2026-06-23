@@ -1,0 +1,183 @@
+{
+  "protocol": {
+    "n_bootstrap": 2000,
+    "random_state": 42,
+    "paired_test": "percentile bootstrap on delta AUC"
+  },
+  "dataset": {
+    "rows": 112146,
+    "proxy_positives": 2490,
+    "sumo_collisions": 23
+  },
+  "auc_with_ci": {
+    "proxy": {
+      "Physics (published a=0.20, b=0.80)": {
+        "auc": 0.988477906665694,
+        "ci95": [
+          0.9873250101439752,
+          0.9894506123311351
+        ]
+      },
+      "Physics (recalibrated a=0.90, b=0.10)": {
+        "auc": 0.9937795722175196,
+        "ci95": [
+          0.9927449748298354,
+          0.9946009577142428
+        ]
+      },
+      "TTC kinematic baseline": {
+        "auc": 0.8931025865334835,
+        "ci95": [
+          0.8854935893122509,
+          0.9005893642431936
+        ]
+      },
+      "Static box baseline": {
+        "auc": 0.8744545373439478,
+        "ci95": [
+          0.865906150469401,
+          0.8824045155993508
+        ]
+      },
+      "XGBoost classifier": {
+        "auc": 0.7983390500061089,
+        "ci95": [
+          0.7915581571129684,
+          0.8052156905047438
+        ]
+      }
+    },
+    "sumo_collisions": {
+      "Physics (published a=0.20, b=0.80)": {
+        "auc": 0.9707095739965698,
+        "ci95": [
+          0.9573514141591513,
+          0.9817693570024477
+        ]
+      },
+      "Physics (recalibrated a=0.90, b=0.10)": {
+        "auc": 0.9683135252473118,
+        "ci95": [
+          0.955005660355864,
+          0.9796167756760917
+        ]
+      },
+      "TTC kinematic baseline": {
+        "auc": 0.801395517112612,
+        "ci95": [
+          0.6998494160587196,
+          0.8949507685028806
+        ]
+      },
+      "Static box baseline": {
+        "auc": 0.7997185932064514,
+        "ci95": [
+          0.6983614415924942,
+          0.8932704591636367
+        ]
+      },
+      "XGBoost classifier": {
+        "auc": 0.8191235246695303,
+        "ci95": [
+          0.778251605305958,
+          0.8608566986596979
+        ]
+      }
+    }
+  },
+  "auprc": {
+    "proxy": {
+      "Physics (published a=0.20, b=0.80)": 0.6910671785559751,
+      "Physics (recalibrated a=0.90, b=0.10)": 0.7615421645881627,
+      "TTC kinematic baseline": 0.30810198811086986,
+      "Static box baseline": 0.2637027193006567,
+      "XGBoost classifier": 0.06553800308538418
+    }
+  },
+  "pairwise_vs_physics_published": {
+    "proxy": {
+      "Physics (recalibrated a=0.90, b=0.10)": {
+        "delta_auc": -0.005301665551825541,
+        "delta_ci95": [
+          -0.005816944527139173,
+          -0.004780289670165755
+        ],
+        "p_one_sided": 1.0,
+        "p_two_sided": 0.0,
+        "n_bootstrap": 2000
+      },
+      "TTC kinematic baseline": {
+        "delta_auc": 0.0953753201322105,
+        "delta_ci95": [
+          0.08791807035209383,
+          0.10291622399678509
+        ],
+        "p_one_sided": 0.0,
+        "p_two_sided": 0.0,
+        "n_bootstrap": 2000
+      },
+      "Static box baseline": {
+        "delta_auc": 0.11402336932174617,
+        "delta_ci95": [
+          0.10630656486937115,
+          0.1223340861200457
+        ],
+        "p_one_sided": 0.0,
+        "p_two_sided": 0.0,
+        "n_bootstrap": 2000
+      },
+      "XGBoost classifier": {
+        "delta_auc": 0.19013885665958508,
+        "delta_ci95": [
+          0.18359492483259962,
+          0.19662635001430762
+        ],
+        "p_one_sided": 0.0,
+        "p_two_sided": 0.0,
+        "n_bootstrap": 2000
+      }
+    },
+    "sumo_collisions": {
+      "Physics (recalibrated a=0.90, b=0.10)": {
+        "delta_auc": 0.0023960487492579174,
+        "delta_ci95": [
+          0.0008026070434805161,
+          0.00376149630529725
+        ],
+        "p_one_sided": 0.003,
+        "p_two_sided": 0.006,
+        "n_bootstrap": 2000
+      },
+      "TTC kinematic baseline": {
+        "delta_auc": 0.16931405688395773,
+        "delta_ci95": [
+          0.08265592670876136,
+          0.2618403337924681
+        ],
+        "p_one_sided": 0.0,
+        "p_two_sided": 0.0,
+        "n_bootstrap": 2000
+      },
+      "Static box baseline": {
+        "delta_auc": 0.17099098079011832,
+        "delta_ci95": [
+          0.0846149856418157,
+          0.2635843657438903
+        ],
+        "p_one_sided": 0.0,
+        "p_two_sided": 0.0,
+        "n_bootstrap": 2000
+      },
+      "XGBoost classifier": {
+        "delta_auc": 0.15158604932703945,
+        "delta_ci95": [
+          0.10203570821124557,
+          0.19865403653033192
+        ],
+        "p_one_sided": 0.0,
+        "p_two_sided": 0.0,
+        "n_bootstrap": 2000
+      }
+    }
+  }
+}

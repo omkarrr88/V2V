@@ -1,0 +1,132 @@
+{
+  "protocol": {
+    "split": "75/25 stratified on kinematic ground truth",
+    "random_state": 42,
+    "selection_criterion": "F1 at CRI threshold 0.6",
+    "grid_alpha_range": "0.10 to 0.90 step 0.05",
+    "grid_beta_range": "0.10 to 0.90 step 0.05",
+    "gamma_constraint": "0.0 (intent disabled per V3.0)",
+    "alpha_plus_beta_constraint": "alpha + beta = 1.0",
+    "bootstrap_iterations_for_CI": 1000
+  },
+  "dataset": {
+    "rows_total": 112146,
+    "rows_train": 84109,
+    "rows_test": 28037,
+    "positive_train": 1867,
+    "positive_test": 623,
+    "sumo_collisions_total": 23,
+    "sumo_collisions_test": 4
+  },
+  "grid_search_top5_by_auc": [
+    {
+      "alpha": 0.9,
+      "beta": 0.1,
+      "train_auc": 0.9937390640945769,
+      "train_f1_at_060": 0.6155794806839772
+    },
+    {
+      "alpha": 0.85,
+      "beta": 0.15,
+      "train_auc": 0.9936223497437711,
+      "train_f1_at_060": 0.6061776061776062
+    },
+    {
+      "alpha": 0.8,
+      "beta": 0.2,
+      "train_auc": 0.9934732216144947,
+      "train_f1_at_060": 0.5834428383705651
+    },
+    {
+      "alpha": 0.75,
+      "beta": 0.25,
+      "train_auc": 0.9932911391514719,
+      "train_f1_at_060": 0.5661887295765256
+    },
+    {
+      "alpha": 0.7,
+      "beta": 0.3,
+      "train_auc": 0.9930698338673042,
+      "train_f1_at_060": 0.5644622578490314
+    }
+  ],
+  "grid_search_top5_by_f1": [
+    {
+      "alpha": 0.9,
+      "beta": 0.1,
+      "train_auc": 0.9937390640945769,
+      "train_f1_at_060": 0.6155794806839772
+    },
+    {
+      "alpha": 0.85,
+      "beta": 0.15,
+      "train_auc": 0.9936223497437711,
+      "train_f1_at_060": 0.6061776061776062
+    },
+    {
+      "alpha": 0.8,
+      "beta": 0.2,
+      "train_auc": 0.9934732216144947,
+      "train_f1_at_060": 0.5834428383705651
+    },
+    {
+      "alpha": 0.75,
+      "beta": 0.25,
+      "train_auc": 0.9932911391514719,
+      "train_f1_at_060": 0.5661887295765256
+    },
+    {
+      "alpha": 0.7,
+      "beta": 0.3,
+      "train_auc": 0.9930698338673042,
+      "train_f1_at_060": 0.5644622578490314
+    }
+  ],
+  "selected_weights_by_auc": {
+    "alpha": 0.9,
+    "beta": 0.1,
+    "gamma": 0.0,
+    "train_auc": 0.9937390640945769
+  },
+  "selected_weights_by_f1": {
+    "alpha": 0.9,
+    "beta": 0.1,
+    "gamma": 0.0,
+    "train_f1_at_060": 0.6155794806839772
+  },
+  "test_metrics_published_weights": {
+    "auc_proxy": 0.9890307772352378,
+    "f1_at_060": 0.5694164989939637,
+    "f1_at_080": 0.03773584905660377,
+    "precision_at_080": 0.9230769230769231,
+    "recall_at_080": 0.019261637239165328,
+    "auc_sumo_collisions": 0.990422002639746,
+    "n_sumo_collisions": 4,
+    "auc_proxy_ci95": [
+      0.9861763891965182,
+      0.9912126381855225
+    ],
+    "auc_sumo_ci95": [
+      0.9855642820095566,
+      0.9957554572692252
+    ]
+  },
+  "test_metrics_selected_weights": {
+    "auc_proxy": 0.993909305282851,
+    "f1_at_060": 0.613614573346117,
+    "f1_at_080": 0.03773584905660377,
+    "precision_at_080": 0.9230769230769231,
+    "recall_at_080": 0.019261637239165328,
+    "auc_sumo_collisions": 0.9892804908500695,
+    "n_sumo_collisions": 4,
+    "auc_proxy_ci95": [
+      0.9913498031650353,
+      0.995602549502043
+    ],
+    "auc_sumo_ci95": [
+      0.9836057802614641,
+      0.9956127092309123
+    ]
+  },
+  "note": "Both weight sets are evaluated on the SAME untouched test partition. The selected weights were chosen using only training data, so test metrics are a valid generalisation estimate."
+}
