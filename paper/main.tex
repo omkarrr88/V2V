@@ -125,7 +125,7 @@ The system is organized as a four-layer pipeline (Fig.~\ref{fig:architecture}):
 % ============================================================
 \section{Mathematical Model}\label{sec:math}
 
-The system takes 5 data fields from each nearby vehicle and produces a risk score between 0 (safe) and 1 (critical). The model is presented bottom-up in seven steps: (i) heading recovery from raw BSM positions, (ii) transformation into the ego frame and the speed-dependent blind-spot zone, (iii) the probabilistic zone-occupancy term $P_{\mathrm{gps}}$, (iv) dead reckoning under packet loss and the penalty $\Gamma_{\mathrm{plr}}$, (v)--(vii) the three risk components $R_{\mathrm{decel}}$, $R_{\mathrm{ttc}}$, and $R_{\mathrm{intent}}$. Equation~(\ref{eq:cri}) then combines all terms into the final CRI. Table~\ref{tab:notation} collects the principal notation used throughout this section; every symbol is also defined in prose at its first use, and the numeric constants are gathered in the parameter reference table of Section~\ref{sec:setup}.
+The system takes 5 data fields from each nearby vehicle and produces a risk score between 0 (safe) and 1 (critical). The model is presented bottom-up in seven steps: (i) heading recovery from raw BSM positions, (ii) transformation into the ego frame and the speed-dependent blind-spot zone, (iii) the probabilistic zone-occupancy term $P_{\mathrm{gps}}$, (iv) dead reckoning under packet loss and the penalty $\Gamma_{\mathrm{plr}}$, (v)--(vii) the three risk components $R_{\mathrm{decel}}$, $R_{\mathrm{ttc}}$, and $R_{\mathrm{intent}}$. Equation~(\ref{eq:cri}) then combines all terms into the final CRI. Table~\ref{tab:notation} collects the principal notation used throughout this section; every symbol is also defined in prose at its first use, and the numeric constants are gathered in the parameter reference table of Section~\ref{sec:setup}. Where a formula would otherwise need a deeply nested single-line expression, it is instead presented as a short named intermediate quantity followed by the quantity of interest --- the presentation used for the zone length in Eq.~(\ref{eq:lbs}) and for the TTC risk in Eq.~(\ref{eq:rttc}) --- and each such equation is followed by a paragraph that reads the formula line by line and gives worked numeric values.
 
 \begin{table}[htbp]
   \caption{Notation used in the mathematical model}
@@ -140,12 +140,17 @@ The system takes 5 data fields from each nearby vehicle and produces a risk scor
     $a$, $d$                   & acceleration / braking magnitude (m/s$^2$) \\
     $\theta$, $\dot{\theta}$   & derived heading (rad) and yaw rate (rad/s) \\
     $x_{\mathrm{rel}}, y_{\mathrm{rel}}$ & target position in ego frame (m) \\
+    $\mathrm{clip}_{[0,1]}(\cdot)$ & bound to the unit interval, $\min(1,\max(0,\cdot))$ \\
+    $s$                        & normalised ego-speed fraction, $s \in [0,1]$ \\
     $L_{\mathrm{bs}}$          & speed-dependent blind-spot zone length (m) \\
+    $L_e, W_e$, $W_t$          & ego length and width; target width (m) \\
+    $W_{\mathrm{lane}}$        & lane width (m) \\
     $P_{\mathrm{gps}}$         & probability target occupies the zone \\
-    $\Phi$                     & standard normal CDF \\
+    $\Phi$, $\sigma$           & standard normal CDF; GPS position s.d.\ (m) \\
     $v_{\min}, v_{\max}$       & zone-extension speed range (m/s) \\
     $\hat{x}, \hat{y}$         & dead-reckoned position prediction (m) \\
     $\Gamma_{\mathrm{plr}}$    & packet-loss risk multiplier \\
+    $\mu$, $\rho$              & tyre-road friction coefficient; air density (kg/m$^3$) \\
     $a_{\max}$                 & maximum braking capability (m/s$^2$) \\
     $D_{\mathrm{stop}}$        & total stopping distance (m) \\
     $d_{\mathrm{gap}}$         & current inter-vehicle gap (m) \\
@@ -153,7 +158,9 @@ The system takes 5 data fields from each nearby vehicle and produces a risk scor
     $v_{\mathrm{rel}}, a_{\mathrm{rel}}$ & relative closing speed / acceleration \\
     $\tau$                     & candidate time-to-collision root (s) \\
     $\mathrm{TTC}$             & time-to-collision (s)~\cite{hayward1972} \\
-    $R_{\mathrm{ttc}}$         & TTC risk component \\
+    $\kappa, \kappa_0$         & TTC urgency ratio and its cut-off \\
+    $R_{\mathrm{ttc,lon}}, R_{\mathrm{ttc,lat}}$ & longitudinal / lateral TTC risk \\
+    $R_{\mathrm{ttc}}$         & combined TTC risk component \\
     $R_{\mathrm{intent}}$      & lane-change-intent risk component \\
     $\alpha, \beta, \gamma$    & CRI component weights \\
     $\mathrm{CRI}$             & Collision Risk Index (final score) \\
@@ -175,12 +182,25 @@ The target's position is transformed into the ego vehicle's reference frame:
   x_{\mathrm{rel}} &= \sin(\theta_e)\cdot\Delta x - \cos(\theta_e)\cdot\Delta y \\
   y_{\mathrm{rel}} &= \cos(\theta_e)\cdot\Delta x + \sin(\theta_e)\cdot\Delta y
 \end{align}
-where $\Delta x = x_t - x_e$, $\Delta y = y_t - y_e$. The blind spot zone extends with speed:
+where $\Delta x = x_t - x_e$, $\Delta y = y_t - y_e$.
+
+\medskip\noindent
+\emph{Speed-dependent zone length.} The blind-spot zone lengthens with ego speed, because a faster ego covers more ground before a merging target can be reacted to. The zone length is defined in two steps: a dimensionless speed fraction $s(v_e)$ that saturates at both ends, and a linear interpolation of the zone length between its base and its maximum,
 \begin{equation}
-  L_{\mathrm{bs}}(v_e) = L_{\mathrm{base}} + \lambda_{\mathrm{scale}}
-    \cdot \mathrm{clamp}\!\left(\frac{v_e - v_{\min}}{v_{\max} - v_{\min}},\,0,\,1\right)
+\label{eq:lbs}
+\begin{aligned}
+  s(v_e)             \;&=\; \mathrm{clip}_{[0,1]}\!\left(
+                              \frac{v_e - v_{\min}}{v_{\max} - v_{\min}}
+                            \right), \\[4pt]
+  L_{\mathrm{bs}}(v_e) \;&=\; L_{\mathrm{base}}
+                            \;+\; \lambda_{\mathrm{scale}}\cdot s(v_e),
+\end{aligned}
 \end{equation}
-where $L_{\mathrm{base}} = 4.5$~m is the minimum zone length, $\lambda_{\mathrm{scale}} = 12.0$~m is the speed-dependent extension, and the speed normalisation runs from $v_{\min} = 2.0$~m/s (below which the zone stays at its base length) to $v_{\max} = 40.0$~m/s (above which the extension saturates). On curves, a curvature correction shifts the zone laterally: $x_{\mathrm{corrected}} = x_{\mathrm{rel}} - y_{\mathrm{rel}}^2\dot{\theta}_e/(2v_e)$.
+where $\mathrm{clip}_{[0,1]}(z) = \min\bigl(1,\max(0,z)\bigr)$ bounds its argument to the unit interval, $L_{\mathrm{base}} = 4.5$~m is the minimum zone length, $\lambda_{\mathrm{scale}} = 12.0$~m is the maximum speed-dependent extension, and the speed normalisation runs from $v_{\min} = 2.0$~m/s to $v_{\max} = 40.0$~m/s.
+
+The two lines of Eq.~(\ref{eq:lbs}) are read as follows. The first line maps the ego speed onto the unit interval: $s = 0$ for any $v_e \le v_{\min}$, $s = 1$ for any $v_e \ge v_{\max}$, and $s$ rises linearly in between, so the clip is what makes the mapping saturate rather than extrapolate outside the calibrated speed band. The second line then uses $s$ as the interpolation weight between the two zone lengths, which means $L_{\mathrm{bs}}$ is bounded by construction to $[L_{\mathrm{base}},\, L_{\mathrm{base}} + \lambda_{\mathrm{scale}}] = [4.5,\, 16.5]$~m. Three worked values make the behaviour concrete: a crawling ego at $v_e = 1.0$~m/s is below $v_{\min}$, so $s = 0$ and $L_{\mathrm{bs}} = 4.5$~m; an ego at urban-arterial speed, $v_e = 13.0$~m/s ($\approx 47$~km/h), gives $s \approx 0.29$ and $L_{\mathrm{bs}} \approx 8.0$~m; an ego at the saturation point of the calibration band, $v_e = 40.0$~m/s or above, gives $s = 1$ and $L_{\mathrm{bs}} = 16.5$~m. The midpoint $s = 0.5$, where $L_{\mathrm{bs}} = 10.5$~m, is reached at $v_e = 21.0$~m/s. Writing the zone length this way also matches the implementation exactly, which computes the clipped fraction into a temporary variable before scaling it (\texttt{bsd\_engine.py}, \texttt{\_compute\_L\_bs}).
+
+On curves, a curvature correction shifts the zone laterally: $x_{\mathrm{corrected}} = x_{\mathrm{rel}} - y_{\mathrm{rel}}^2\dot{\theta}_e/(2v_e)$.
 
 \medskip\noindent
 \emph{Ego vehicle class.} The zone parameters $L_{\mathrm{base}} = 4.5$~m and $\lambda_{\mathrm{scale}} = 12.0$~m correspond to a passenger-car ego (sedan/SUV), whose body length is approximately one base-zone unit and whose A/B/C-pillar geometry produces a rear-quarter blind spot of roughly the dimensions given. The simulated fleet does include trucks as \emph{target} vehicles, but the CRI engine reported in this paper treats only passenger cars as the ego --- the entity whose blind spot is being monitored. For a truck ego, $L_{\mathrm{base}}$ would scale to the vehicle length (around 12--14~m) and $\lambda_{\mathrm{scale}}$ would expand to reflect the much larger rear-and-side blind region around an articulated heavy vehicle. The same equations apply; only the constants change. Per-class parameter calibration for heavy vehicles is left for future work.
@@ -191,7 +211,7 @@ Since GPS has 1.5~m uncertainty, the system calculates the \textit{probability} 
   P_{\mathrm{lat}} &= \Phi\!\left(\frac{x_{\max} - x_c}{\sigma}\right) - \Phi\!\left(\frac{x_{\min} - x_c}{\sigma}\right) \\
   P_{\mathrm{lon}} &= \Phi\!\left(\frac{y_{\max} - y_c}{\sigma}\right) - \Phi\!\left(\frac{y_{\min} - y_c}{\sigma}\right)
 \end{align}
-where $\Phi$ is the standard normal cumulative distribution function (CDF) and $\sigma = 1.5$~m. The combined probability is $P_{\mathrm{gps}} = |P_{\mathrm{lat}}| \times P_{\mathrm{lon}}$, with a forward-lane filter to prevent false alarms from vehicles directly ahead.
+Here $\Phi$ is the standard normal cumulative distribution function (CDF) and $\sigma = 1.5$~m is the GPS position standard deviation, so each factor is the probability mass of a Gaussian centred on the reported target position that falls inside the zone along one axis. The four limits are the edges of the blind-spot zone expressed in the ego frame of Section~\ref{sec:frame}, and the two centres $x_c, y_c$ are the curvature-corrected target coordinates $x_{\mathrm{corrected}}$ and $y_{\mathrm{rel}}$. Laterally the zone spans the adjacent lane measured outward from the ego's flank, $x_{\min} = W_e/2$ and $x_{\max} = W_e/2 + W_{\mathrm{lane}}$ for a target on the right (mirrored to $-(W_e/2 + W_{\mathrm{lane}})$ and $-W_e/2$ on the left), where $W_e$ is the ego width and $W_{\mathrm{lane}}$ the lane width. Longitudinally $y_{\min} = -L_{\mathrm{bs}}(v_e)$, the speed-dependent zone length of Eq.~(\ref{eq:lbs}) measured behind the ego, and $y_{\max} = L_e/2$, the ego's front bumper, beyond which a target is visible through the windscreen rather than in the blind spot. Equation~(\ref{eq:lbs}) therefore enters the risk score through $y_{\min}$: a faster ego lengthens the longitudinal integration window and so raises $P_{\mathrm{lon}}$ for the same target. The combined probability is $P_{\mathrm{gps}} = |P_{\mathrm{lat}}| \times P_{\mathrm{lon}}$, the absolute value making the lateral factor independent of the order in which the mirrored limits are substituted. A target whose lateral offset falls inside the ego's own width is not in either side zone at all, so $P_{\mathrm{lat}}$ is additionally tapered by $(|x_c|/(W_e/2))^2$ there; this is the forward-lane filter that prevents vehicles directly ahead from raising a side alert.
 
 \subsection{Dead Reckoning and Packet Loss}\label{sec:dr}
 When packets are lost, the system predicts target position using a Constant-Acceleration, Constant-Yaw-Rate model:
@@ -201,7 +221,7 @@ When packets are lost, the system predicts target position using a Constant-Acce
 \begin{equation}
   \hat{y} = y + v\sin(\theta)\,\tau_{\mathrm{dr}} + \tfrac{1}{2}\,a_{\mathrm{net}}\sin(\theta)\,\tau_{\mathrm{dr}}^2
 \end{equation}
-where $a_{\mathrm{net}} = a - d$ is the signed net acceleration recovered from the BSM's split acceleration and deceleration fields, and $\tau_{\mathrm{dr}}$ is the dead-reckoning prediction horizon (distinct from the time-to-collision root $\tau$ of Section~\ref{sec:rttc}). Prediction is limited to $\tau_{\mathrm{dr}} \le 0.5$~s; targets are dropped after four consecutive lost packets. A Packet Loss Ratio (PLR) tracked over a 10-step window increases risk: $\Gamma_{\mathrm{plr}} = 1 + 0.30 \cdot \mathrm{PLR}_{\mathrm{window}}$.
+where $a_{\mathrm{net}} = a - d$ is the signed net acceleration recovered from the BSM's split acceleration and deceleration fields, and $\tau_{\mathrm{dr}}$ is the dead-reckoning prediction horizon (distinct from the time-to-collision root $\tau$ of Section~\ref{sec:rttc}). Prediction is limited to $\tau_{\mathrm{dr}} \le 0.5$~s; targets are dropped once more than four consecutive packets have been lost. A Packet Loss Ratio (PLR) tracked over a 10-step window increases risk: $\Gamma_{\mathrm{plr}} = 1 + 0.30 \cdot \mathrm{PLR}_{\mathrm{window}}$.
 
 \subsection{Deceleration Risk (\texorpdfstring{$R_{\mathrm{decel}}$}{R\_decel})}\label{sec:rdecel}
 This component measures whether the target vehicle can stop in time. The maximum braking capability combines tyre-road friction and aerodynamic drag:
@@ -214,40 +234,58 @@ where $\mu$ is the tyre-road friction coefficient, $g$ is gravitational accelera
 \end{equation}
 The risk grows exponentially as the stopping distance approaches the actual gap between vehicles:
 \begin{equation}
-\begin{aligned}
-  R_{\mathrm{decel}} &= \mathrm{clip}_{[0,1]}\!\left(
+  R_{\mathrm{decel}} = \mathrm{clip}_{[0,1]}\!\left(
     \exp\!\left(-K_{\mathrm{brake}} \cdot
        \frac{d_{\mathrm{gap}} - D_{\mathrm{stop}}}{D_{\mathrm{stop}}}\right)
-  \right) \\
-  \mathrm{where}\ \mathrm{clip}_{[0,1]}(z) &= \min\bigl(1,\,\max(0,\,z)\bigr)
-\end{aligned}
+  \right)
 \end{equation}
-with $K_{\mathrm{brake}} = 1.50$. The notation $\mathrm{clip}_{[0,1]}(\cdot)$ simply means the expression is bounded between 0 and 1 so $R_{\mathrm{decel}}$ remains a valid probability-style score even at the extremes. When the gap exactly equals the stopping distance, $R_{\mathrm{decel}} = 1.0$; as the gap grows, the value decays toward zero.
+with $K_{\mathrm{brake}} = 1.50$ and $\mathrm{clip}_{[0,1]}(\cdot)$ the unit-interval bound already defined in Eq.~(\ref{eq:lbs}), which keeps $R_{\mathrm{decel}}$ a valid probability-style score even at the extremes. A target at rest has $D_{\mathrm{stop}} = 0$ and the quotient is undefined; that case is defined to carry no stopping-distance risk, $R_{\mathrm{decel}} = 0$, since a stationary vehicle cannot close the gap ahead of it. When the gap exactly equals the stopping distance, $R_{\mathrm{decel}} = 1.0$; as the gap grows, the value decays toward zero.
 
 \subsection{Time-to-Collision Risk (\texorpdfstring{$R_{\mathrm{ttc}}$}{R\_ttc})}\label{sec:rttc}
-The Time-to-Collision risk component captures how imminent a closing manoeuvre is, expressed on a 0--1 scale. The underlying metric is the classical Time-to-Collision introduced by Hayward~\cite{hayward1972}: the time remaining until two vehicles collide if both continue on their current trajectories. In our formulation the longitudinal gap evolves as $d(\tau) = d_{\mathrm{gap}} - v_{\mathrm{rel}}\,\tau - \tfrac{1}{2}\,a_{\mathrm{rel}}\,\tau^2$, and $\mathrm{TTC}$ is the smallest positive root of
+The Time-to-Collision risk component captures how imminent a closing manoeuvre is, expressed on a 0--1 scale. The underlying metric is the classical Time-to-Collision introduced by Hayward~\cite{hayward1972}: the time remaining until two vehicles collide if both continue on their current trajectories. In our formulation the longitudinal gap evolves as $g(\tau) = d_{\mathrm{gap}} - v_{\mathrm{rel}}\,\tau - \tfrac{1}{2}\,a_{\mathrm{rel}}\,\tau^2$ (written $g$ rather than $d$, which Table~\ref{tab:notation} reserves for the BSM braking field), and $\mathrm{TTC}$ is the smallest positive root of
 \begin{equation}
+\label{eq:ttcroot}
   d_{\mathrm{gap}} \;-\; v_{\mathrm{rel}}\cdot \tau \;-\; \tfrac{1}{2}\,a_{\mathrm{rel}}\cdot \tau^2 \;=\; 0,
 \end{equation}
-where $d_{\mathrm{gap}}$ is the current longitudinal gap between ego and target (metres; the same quantity used by $R_{\mathrm{decel}}$), $v_{\mathrm{rel}}$ is the relative closing speed along the ego direction (m/s, positive when the gap is shrinking), and $a_{\mathrm{rel}}$ is the relative closing acceleration (m/s$^2$). We deliberately do not reuse the ego-frame coordinate symbols $x_{\mathrm{rel}}, y_{\mathrm{rel}}$ of Section~\ref{sec:frame} here, since those denote lateral and longitudinal positions rather than a gap. If no positive real root exists, the two vehicles never meet on the current trajectory and $\mathrm{TTC}$ is defined as $+\infty$. The risk is then a piecewise function of $\mathrm{TTC}$:
+where $d_{\mathrm{gap}}$ is the current longitudinal gap between ego and target (metres; the same quantity used by $R_{\mathrm{decel}}$), $v_{\mathrm{rel}}$ is the relative closing speed along the ego direction (m/s, positive when the gap is shrinking), and $a_{\mathrm{rel}}$ is the relative closing acceleration (m/s$^2$). We deliberately do not reuse the ego-frame coordinate symbols $x_{\mathrm{rel}}, y_{\mathrm{rel}}$ of Section~\ref{sec:frame} here, since those denote lateral and longitudinal positions rather than a gap. If no positive real root exists, the two vehicles never meet on the current trajectory and $\mathrm{TTC}$ is defined as $+\infty$; the implementation applies the same convention to any pair whose closing speed is non-positive and whose closing acceleration is non-negative ($v_{\mathrm{rel}} \le 0$, $a_{\mathrm{rel}} \ge 0$), short-circuiting the root-finding. This guard is deliberately conservative in the sense of suppressing alerts rather than raising them: when $a_{\mathrm{rel}} > 0$ strictly, Eq.~(\ref{eq:ttcroot}) does have a finite positive root even though the gap is momentarily growing, so the engine declines to score a conflict that its own kinematics would eventually predict. We note the divergence rather than silently reconciling the two, since every number reported in this paper was produced with the guard in place; removing it is a change to the detector, not to its description, and belongs with the on-road validation deferred to future work. Conversely, if the two bodies already overlap ($d_{\mathrm{gap}} \le 0$) the engine short-circuits in the other direction and sets $\mathrm{TTC} = 0$.
+
+The \emph{longitudinal} TTC risk is then a three-regime piecewise function of $\mathrm{TTC}$. To keep the three cases short enough to read at a glance, we first express the time-to-collision as a dimensionless \emph{urgency ratio} $\kappa$ --- how far the current $\mathrm{TTC}$ has fallen towards the critical threshold --- and write the regime boundaries in terms of $\kappa$ alone:
 \begin{equation}
 \label{eq:rttc}
-  R_{\mathrm{ttc}} \;=\; \begin{cases}
-    1.0 & \text{if } \mathrm{TTC} \le \mathrm{TTC}_{\mathrm{crit}}, \\[3pt]
-    \left(\dfrac{\mathrm{TTC}_{\mathrm{crit}}}{\mathrm{TTC}}\right)^{\!2}
-        & \text{if } \mathrm{TTC}_{\mathrm{crit}} < \mathrm{TTC} \le \mathrm{TTC}_{\max}, \\[6pt]
-    0   & \text{otherwise}.
+\begin{aligned}
+  \kappa \;&=\; \frac{\mathrm{TTC}_{\mathrm{crit}}}{\mathrm{TTC}},
+  \qquad
+  \kappa_0 \;=\; \frac{\mathrm{TTC}_{\mathrm{crit}}}{\mathrm{TTC}_{\max}}, \\[6pt]
+  R_{\mathrm{ttc,lon}} \;&=\;
+  \begin{cases}
+    1          & \text{if } \kappa \ge 1, \\[3pt]
+    \kappa^{2} & \text{if } \kappa_0 \le \kappa < 1, \\[3pt]
+    0          & \text{if } \kappa < \kappa_0.
   \end{cases}
+\end{aligned}
 \end{equation}
+
+\medskip\noindent
+\emph{How to read Eq.~(\ref{eq:rttc}).} The ratio $\kappa$ is dimensionless and increases as the collision becomes more imminent, so the three regimes correspond directly to the three physical cases. The first case, $\kappa \ge 1$, is exactly the condition $\mathrm{TTC} \le \mathrm{TTC}_{\mathrm{crit}}$: the predicted impact is inside the critical horizon and the component saturates at its maximum value of 1. It also covers the degenerate input $\mathrm{TTC} = 0$, which the engine produces when the two bodies already overlap, and for which $\kappa$ is taken as $+\infty$. The second case, $\kappa_0 \le \kappa < 1$, is exactly $\mathrm{TTC}_{\mathrm{crit}} < \mathrm{TTC} \le \mathrm{TTC}_{\max}$: the risk decays quadratically in $\kappa$ as the predicted impact recedes. The third case, $\kappa < \kappa_0$, is exactly $\mathrm{TTC} > \mathrm{TTC}_{\max}$, which also covers the no-root case $\mathrm{TTC} = +\infty$ (giving $\kappa = 0$); the component is switched off. The cut-off $\kappa_0$ is not a free parameter --- it is fixed by the two thresholds, and takes the value $4.0/8.0 = 0.5$ at the published thresholds selected below (the sensitivity analysis of Section~\ref{sec:sensitivity} varies $\mathrm{TTC}_{\mathrm{crit}}$, and $\kappa_0$ moves with it). Worked values at the published thresholds illustrate the profile: $\mathrm{TTC} = 2$~s gives $\kappa = 2$ and $R_{\mathrm{ttc,lon}} = 1$; $\mathrm{TTC} = 4$~s gives $\kappa = 1$ and $R_{\mathrm{ttc,lon}} = 1$; $\mathrm{TTC} = 6$~s gives $\kappa = 2/3$ and $R_{\mathrm{ttc,lon}} = 4/9 \approx 0.44$; $\mathrm{TTC} = 8$~s gives $\kappa = 0.5$ and $R_{\mathrm{ttc,lon}} = 0.25$; anything beyond 8~s gives 0. The component is continuous at the lower breakpoint --- both branches evaluate to 1 at $\mathrm{TTC} = \mathrm{TTC}_{\mathrm{crit}}$ --- and deliberately discontinuous at the upper one, dropping from $0.25$ to $0$ at $\mathrm{TTC}_{\max}$, which is the point beyond which the engine stops treating a predicted conflict as actionable at all.
 
 \medskip\noindent
 \emph{Threshold selection.} The two breakpoints in Eq.~(\ref{eq:rttc}) are not arbitrary. The critical threshold $\mathrm{TTC}_{\mathrm{crit}} = 4.0$~s matches the NHTSA Forward Collision Warning band~\cite{nhtsa_fcw2013}, in which a $\mathrm{TTC}$ at or below 4~s combined with a non-zero closing rate is treated as an imminent-warning condition for passenger vehicles. The horizon $\mathrm{TTC}_{\max} = 8.0$~s is the upper bound over which a lane-change manoeuvre would still plausibly bring the two trajectories together; beyond 8~s the predicted impact is too far in the future to motivate an alert, since intervening driver actions and updated BSMs are nearly certain to invalidate the prediction. The quadratic decay between 4~s and 8~s is chosen so that the score falls smoothly from 1.0 to 0.25 as the time horizon doubles, which is consistent with the conservative roll-off used in Euro NCAP surrogate-safety testing~\cite{euroncap2019}.
 
 \medskip\noindent
-A parallel calculation evaluates side-impact (sideswipe) geometry using the lateral gap and lateral closing rate, producing $R_{\mathrm{ttc,lat}}$. For the lateral component a linear decay $1 - \mathrm{TTC}_{\mathrm{lat}}/\mathrm{TTC}_{\mathrm{crit}}$ is used instead of the quadratic form, because lateral closing speeds are typically much smaller than longitudinal ones and the quadratic form would suppress almost all lateral signal. The combined component reported as $R_{\mathrm{ttc}}$ in the CRI formula is the higher of the two values:
+A parallel calculation evaluates side-impact (sideswipe) geometry, producing the lateral counterpart $R_{\mathrm{ttc,lat}}$ from a lateral time-to-collision $\mathrm{TTC}_{\mathrm{lat}} = W_{\mathrm{gap}}/|v_{\mathrm{lat,rel}}|$, where $W_{\mathrm{gap}} = W_{\mathrm{lane}} - (W_e + W_t)/2$ is the lateral clearance the lane leaves once both vehicle half-widths are removed --- a constant for a given lane and vehicle pair rather than a measured separation --- and $v_{\mathrm{lat,rel}}$ is the lateral closing rate. The lateral branch uses a linear decay rather than the quadratic form, because lateral closing speeds are typically much smaller than longitudinal ones and the quadratic form would suppress almost all lateral signal:
+\begin{equation*}
+  R_{\mathrm{ttc,lat}} =
+  \begin{cases}
+    1 - \dfrac{\mathrm{TTC}_{\mathrm{lat}}}{\mathrm{TTC}_{\mathrm{crit}}}
+      & \text{if } \mathrm{TTC}_{\mathrm{lat}} \le \mathrm{TTC}_{\mathrm{crit}}, \\[8pt]
+    0 & \text{otherwise},
+  \end{cases}
+\end{equation*}
+In the degenerate case $W_{\mathrm{gap}} \le 0$ the two bodies already overlap laterally and $R_{\mathrm{ttc,lat}} = 1$; when there is no lateral motion, $\mathrm{TTC}_{\mathrm{lat}} \to \infty$ and the branch is zero. The component that enters the CRI formula is the higher of the two branches,
 \begin{equation}
-  R_{\mathrm{ttc}} \;\leftarrow\; \max\bigl(R_{\mathrm{ttc,lon}},\; R_{\mathrm{ttc,lat}}\bigr).
+  R_{\mathrm{ttc}} \;=\; \max\bigl(R_{\mathrm{ttc,lon}},\; R_{\mathrm{ttc,lat}}\bigr),
 \end{equation}
+so whichever of the two geometries is the more urgent governs the component.
 
 \subsection{Intent Risk (\texorpdfstring{$R_{\mathrm{intent}}$}{R\_intent})}\label{sec:rintent}
 The 5-field BSM does not carry the turn-signal indicator, so lane-change intent cannot be read directly from the source vehicle. Two indirect signals are available: the lateral component of the ego velocity (computed from successive position samples), and the heading change rate $\dot{\theta}$. The system uses the lateral velocity:
@@ -270,11 +308,11 @@ The final Collision Risk Index combines the zone-occupancy probability (Section~
 \begin{equation}
 \label{eq:cri}
 \begin{aligned}
-  \mathrm{CRI} &= \mathrm{clip}\!\Big(
+  \mathrm{CRI} &= \mathrm{clip}_{[0,1]}\!\Big(
     P_{\mathrm{gps}} \cdot \max(R_{\mathrm{decel}},R_{\mathrm{ttc}}) \\
     &\quad \cdot \bigl[\alpha R_{\mathrm{decel}} + \beta R_{\mathrm{ttc}}
                + \gamma R_{\mathrm{intent}}\bigr] \\
-    &\quad \cdot \Gamma_{\mathrm{plr}},\;0,\;1\Big)
+    &\quad \cdot \Gamma_{\mathrm{plr}}\Big)
 \end{aligned}
 \end{equation}
 The $\max(R_{\mathrm{decel}},R_{\mathrm{ttc}})$ \textbf{severity gate} in Eq.~(\ref{eq:cri}) prevents false alarms from small harmless values adding up by requiring at least one genuinely high danger signal. Optimized weights: $\alpha=0.20$, $\beta=0.80$, $\gamma=0.00$.
@@ -400,7 +438,90 @@ An XGBoost classifier~\cite{chen2016xgboost} serves as an exploratory baseline. 
 % ============================================================
 \section{Results and Analysis}\label{sec:results}
 
-This section reports the evaluation in the order a reader needs to consume it: first the ground-truth definition used by every following metric, then the overall performance table with confidence intervals and significance tests, then a held-out calibration check that rules out test-set leakage, and finally the ROC/PR curves, the exploratory ML comparison, the per-scenario and multi-seed robustness checks, the ablation, and the sensitivity analysis.
+\subsection*{Analysis framework}
+Because this section contains ten subsections, each answering a different question about the engine, we first state the framework that organises them and the logical relationships between them. The framework is shown as a flowchart in Fig.~\ref{fig:framework} and summarised subsection by subsection in Table~\ref{tab:framework}. It has five stages, and its shape is not a chain: Stages~1 and~2 are sequential, because nothing can be measured before the ground truth is defined, but Stages~3,~4 and~5 are three independent interrogations of the Stage-2 result and can be read in any order.
+
+\medskip\noindent
+\emph{Stage 1 --- Validity of the measuring stick} (Section~\ref{sec:gt}). Defines the two ground-truth sources, Tier~1 (SUMO physical collisions, label-independent) and Tier~2 (kinematic near-miss proxy), and states exactly what each can and cannot support. Every number in Stages~2--5 is measured against these labels, so nothing downstream is interpretable until this stage is settled.
+
+\medskip\noindent
+\emph{Stage 2 --- How well does the engine detect?} (Sections~\ref{sec:overall_perf}--\ref{sec:roc_pr}). Establishes the headline detection result with confidence intervals and pairwise significance tests, then shows it is not an artefact of test-set leakage, then displays the full threshold-independent operating characteristic behind the single AUC figure. This is the claim the remaining three stages interrogate.
+
+\medskip\noindent
+\emph{Stage 3 --- Is a learned model a better choice?} (Sections~\ref{sec:ai_results}--\ref{sec:other_ml}). Tests the design decision at the heart of the paper --- physics rather than learning --- by training one classifier and then three more under identical pre-processing, and by locating the precise obstacle (CRITICAL-class rarity) rather than merely reporting that learning scores lower.
+
+\medskip\noindent
+\emph{Stage 4 --- Does the result survive a change of conditions?} (Sections~\ref{sec:per_scenario}--\ref{sec:multiseed}). Re-measures the Stage-2 result after changing the hazard type and then the random traffic seed, which separates a genuine property of the engine from a property of one particular simulation run.
+
+\medskip\noindent
+\emph{Stage 5 --- Why does it work, and where does it break?} (Sections~\ref{sec:ablation}--\ref{sec:sensitivity}). Attributes the Stage-2 result to the component weights that produce it by varying them one configuration at a time, then maps the parameter envelope within which the result continues to hold.
+
+\medskip\noindent
+Read as a whole, the five stages form a single argument: Stage~1 establishes what counts as a correct detection, Stage~2 shows the engine achieves it, Stage~3 shows the obvious alternative does not, Stage~4 shows the achievement is not conditional on one scenario or seed, and Stage~5 shows which weighting choices the result rests on and how far the operating conditions can drift before it degrades. The two dashed arrows in Fig.~\ref{fig:framework} mark the two places where a later stage sends a conclusion back to an earlier one. The Stage-5 ablation is where the published weight configuration $(\alpha, \beta, \gamma) = (0.20, 0.80, 0)$ is chosen from among the five candidates, and Section~\ref{sec:calib} is the held-out re-check that this choice is not an artefact of having seen the evaluation data. The Stage-3 rare-event ceiling is what justifies keeping the Stage-2 physics engine as the sole decision-maker rather than promoting any learned classifier.
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{fig17_results_framework.png}
+  \caption{Analysis framework for Section~\ref{sec:results}. The ten result subsections are grouped into five stages. Solid arrows are dependencies: Stage~1 defines the ground truth that Stage~2 measures against, and the Stage-2 result then fans out to three independent interrogations --- Stages~3, 4 and~5 --- which do not depend on one another and may be read in any order. The two dashed arrows are the feedback paths, listed as notes \textcircled{1} and \textcircled{2} beneath the diagram: the rare-event ceiling established in Section~\ref{sec:other_ml} is what keeps the physics engine the sole decision-maker behind Section~\ref{sec:overall_perf}, and the ablation of Section~\ref{sec:ablation} is where the published weights are chosen, which Section~\ref{sec:calib} then re-checks on a held-out partition.}
+  \label{fig:framework}
+\end{figure*}
+
+\begin{table*}[htbp]
+  \centering
+  \caption{Function of each Results subsection and its place in the analysis framework of Fig.~\ref{fig:framework}.}
+  \label{tab:framework}
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{@{}cp{2.4cm}p{4.0cm}p{2.5cm}p{4.4cm}@{}}
+    \toprule
+    \textbf{Stage} & \textbf{Subsection} & \textbf{Question it answers} & \textbf{Evidence} & \textbf{Outcome} \\
+    \midrule
+    1 & \ref{sec:gt} Ground truth
+      & Against what labels is a detection judged correct, and how independent are they?
+      & ---
+      & Tier~1 ($n=27$, label-independent) and Tier~2 (proxy, shares inputs) defined with their limits stated \\
+    \addlinespace
+    2 & \ref{sec:overall_perf} Overall performance
+      & How well does the engine rank risk against each ground truth, and is the margin significant?
+      & Table~\ref{tab:perf}
+      & Tier~1 AUC 0.958 [0.944, 0.970]; better than every baseline at $p<0.001$ \\
+    2 & \ref{sec:calib} Calibration discipline
+      & Could the published weights be an artefact of test-set knowledge?
+      & Table~\ref{tab:calib}
+      & No: on the untouched partition they reach Tier~1 AUC 0.941 and Tier~2 0.987, indistinguishable from a train-only optimum \\
+    2 & \ref{sec:roc_pr} ROC and PR analysis
+      & What does the full threshold sweep look like behind the single AUC number?
+      & Figs.~\ref{fig:roc},~\ref{fig:pr}
+      & AUC ordering of Table~\ref{tab:perf} reproduced; only the physics curve dominates at every operating point; AUPRC 0.677 vs.\ 0.024 random \\
+    \addlinespace
+    3 & \ref{sec:ai_results} Exploratory AI model
+      & Would a learned classifier do better than the physics engine?
+      & Table~\ref{tab:ai_perf}, Figs.~\ref{fig:confusion}--\ref{fig:shap_dep}
+      & No: Tier~2 AUC 0.772 and 0\% argmax CRITICAL recall; SHAP confirms physically sensible attributions \\
+    3 & \ref{sec:other_ml} Other ML methods
+      & Is that failure specific to XGBoost or inherent to the data?
+      & Tables~\ref{tab:ml_compare},~\ref{tab:op_point}, Fig.~\ref{fig:crit_pr}
+      & Inherent: all four learners reach 0\% argmax CRITICAL recall; no threshold is both sensitive and precise \\
+    \addlinespace
+    4 & \ref{sec:per_scenario} Per-scenario performance
+      & Does performance depend on the hazard type?
+      & Table~\ref{tab:scenario_auc}, Figs.~\ref{fig:speed_cri},~\ref{fig:calibration}
+      & No: $\Delta$AUC $\le 0.002$ across Normal, TSV, HNR \\
+    4 & \ref{sec:multiseed} Multi-seed robustness
+      & Does performance depend on one random traffic pattern?
+      & Table~\ref{tab:multiseed}
+      & No: $0.9954 \pm 0.0041$ over six seeds; seed~42 is the conservative case \\
+    \addlinespace
+    5 & \ref{sec:ablation} Ablation study
+      & Which weighting choices actually produce the result?
+      & Table~\ref{tab:ablation}
+      & $\gamma = 0$ is load-bearing: enabling intent at $\gamma = 0.20$ costs 44\% F1 at the WARNING threshold; A5 selected over A2 on proxy AUC \\
+    5 & \ref{sec:sensitivity} Sensitivity analysis
+      & Over what parameter range does the result still hold?
+      & Fig.~\ref{fig:sensitivity}
+      & Robust to GPS noise $\le 3.0$~m and packet loss $\le 20\%$ \\
+    \bottomrule
+  \end{tabular}
+\end{table*}
 
 \subsection{Ground Truth Definition}\label{sec:gt}
 Two complementary ground-truth sources are used. We refer to them as Tier~1 and Tier~2 throughout the paper; the labels refer to the source of the positive label, not to road friction or any other physical quantity.
@@ -465,7 +586,7 @@ A reasonable concern with the headline number is whether the CRI weights $\alpha
 
 The published weights generalise to the held-out test partition at proxy AUC $= 0.987$ and Tier~1 AUC $= 0.941$; only 7 of the 27 collision events fall in the test partition, so the Tier~1 interval is necessarily wide. The headline result is therefore not a product of test-set leakage. We keep the published weights $\alpha=0.20$, $\beta=0.80$ as the production configuration because (i) on the label-independent Tier~1 ground truth the two configurations are statistically indistinguishable (their bootstrap CIs overlap almost entirely), (ii) the published weights perform marginally \emph{better} there (0.941 vs.\ 0.939), and (iii) re-running the simulation under the alternative weights does not visibly change the alert behaviour in the per-vehicle time-series plots. On the Tier~2 proxy the train-optimal weights are genuinely (if slightly) stronger, as Table~\ref{tab:calib} shows.
 
-\subsection{ROC and PR Analysis}
+\subsection{ROC and PR Analysis}\label{sec:roc_pr}
 The purpose of Fig.~\ref{fig:roc} is to compare threshold-independent detection quality across all four methods on one axis system~\cite{fawcett2006}: each curve traces the true-positive/false-positive trade-off as the alert threshold sweeps its range. The curves are computed on the Tier~2 kinematic proxy across the full 146{,}051-row evaluation set. The Tier~2 ranking matches Table~\ref{tab:perf}: physics model at AUC $= 0.987$, TTC kinematic baseline at 0.889, static box baseline at 0.874, and the exploratory XGBoost classifier at 0.772. Against the 27 Tier~1 SUMO collisions, the physics model achieves AUC $= 0.958$ with 95\% CI $[0.944,\,0.970]$; as noted in Section~\ref{sec:overall_perf}, the gap to every baseline is wider on Tier~1 than on Tier~2, the opposite of what an input-overlap artefact would produce. The physics model also achieves an AUPRC of 0.677 on the proxy, far above the random baseline of 0.024 driven by the 2.37\% positive rate. Fig.~\ref{fig:pr} shows the precision-recall curve, which is the more informative view when positive events are this rare and ROC-AUC can be misleadingly optimistic~\cite{davis2006}: it reports, at every recall level, what fraction of raised alerts would actually correspond to true events.
 
 \begin{figure}[htbp]
@@ -482,7 +603,7 @@ The purpose of Fig.~\ref{fig:roc} is to compare threshold-independent detection 
   \label{fig:pr}
 \end{figure}
 
-\subsection{Exploratory AI Model Results}
+\subsection{Exploratory AI Model Results}\label{sec:ai_results}
 The XGBoost classifier is included as an exploratory learning-based baseline rather than a proposed deployment component. On the Tier~2 kinematic proxy it scores AUC $= 0.772$ (below both TTC and Static box, see Table~\ref{tab:perf}); on the Tier~1 model-independent ground truth it scores AUC $= 0.779$, statistically indistinguishable from the two kinematic baselines (the three confidence intervals overlap almost entirely). On the per-class breakdown (Table~\ref{tab:ai_perf}) the classifier detects CAUTION (64\% recall) and WARNING (59\% recall) events but fails entirely on the CRITICAL class under the default argmax decision rule (0\% recall, 13 test samples). The failure is systematic rather than statistical: five-fold time-series cross-validation also yields 0\% CRITICAL recall across all folds, and Section~\ref{sec:other_ml} shows that Random Forest, LightGBM, and Logistic Regression all hit the same wall under identical pre-processing. The purpose of the confusion matrix in Fig.~\ref{fig:confusion} is to show not merely \emph{that} argmax CRITICAL recall is zero but \emph{where} the CRITICAL mass is absorbed --- into the adjacent WARNING and CAUTION rows rather than into SAFE --- and how the minority classes trade precision against recall.
 
 Fig.~\ref{fig:feat_imp} reports the XGBoost \emph{gain-based split contribution} of each of the 15 features --- the loss reduction attributable to splits on that feature, normalised across the ensemble. Because the paper also reports SHAP attributions, we deliberately avoid the looser term ``feature importance'' and reserve attribution language for the SHAP analysis below; the gain statistic is a model-internal training quantity, not a per-sample explanation. The strongest split contributions come from braking dynamics (decel $= 0.35$) and gap distance (max\_gap $= 0.14$). The purpose of Fig.~\ref{fig:feat_corr} is to expose redundancy in the input representation before any attribution is interpreted: the 15 input features include four perfectly correlated pairs (speed/\allowbreak speed\_kmh, rel\_speed/\allowbreak closing\_speed, accel/\allowbreak abs\_accel, decel/\allowbreak is\_braking), so the effective feature count is approximately 11 unique signals, and contribution mass reported for one member of a correlated pair should be read as shared with its twin.
@@ -594,12 +715,12 @@ Because a 0\% recall figure invites the objection that it is merely an artefact 
   \label{fig:crit_pr}
 \end{figure}
 
-\subsection{Per-Scenario Performance}
+\subsection{Per-Scenario Performance}\label{sec:per_scenario}
 To verify the system works across different hazard types, AUC was computed separately for each scenario (Table~\ref{tab:scenario_auc}). The narrow spread ($\Delta$AUC~$\le$~0.002) confirms the system is robust across different traffic conditions.
 
 Fig.~\ref{fig:speed_cri} plots ego speed against the per-step maximum CRI for a 5{,}000-row stratified sample, colour-coded by scenario. Its purpose is diagnostic: it checks that the risk surface is driven by interaction geometry rather than by ego speed alone. Elevated CRI values occur across the whole ego-speed range --- including a dense near-standstill column in which a stationary or queued ego is approached by faster traffic --- while above roughly 35~m/s the CRI is essentially zero, because free-flow speeds in this network occur only with large headways. HNR rows reach the elevated band at every speed, consistent with the longer stopping distances (reduced friction) that drive $R_{\mathrm{decel}}$. Fig.~\ref{fig:calibration} serves a different function: it is a reliability diagram that bins the predicted CRI and plots the observed positive fraction in each bin, testing whether the CRI behaves not only as a ranking score but as an approximately calibrated probability --- points near the diagonal mean that a CRI of 0.6 corresponds to roughly a 60\% empirical event frequency in that bin.
 
-\subsection{Multi-Seed Robustness}
+\subsection{Multi-Seed Robustness}\label{sec:multiseed}
 To confirm results are not dependent on a single random traffic pattern, the simulation was repeated with six random seeds: the primary seed~42 (used throughout this paper) plus five additional seeds (Table~\ref{tab:multiseed}). Seed~42 produces the most challenging traffic mix (highest proportion of dense interactions near the Atal Bridge merge zones), which accounts for its slightly lower AUC. All results reported in prior sections use seed~42 as the conservative baseline.
 
 \begin{table}[htbp]
@@ -646,7 +767,7 @@ To confirm results are not dependent on a single random traffic pattern, the sim
   \label{fig:calibration}
 \end{figure}
 
-\subsection{Ablation Study}
+\subsection{Ablation Study}\label{sec:ablation}
 Five configurations were tested (Table~\ref{tab:ablation}); F1 values are reported at the WARNING ($0.60$) and CRITICAL ($0.80$) thresholds. Including intent ($\gamma = 0.20$, A3/A4) without turn signals causes a 44\% F1 drop at the WARNING threshold, validating $\gamma = 0$. F1 at the 0.80 threshold is small for every configuration by construction: the severity-gated CRI exceeds $0.80$ on only 54 of 146{,}051 rows against 3{,}465 proxy positives, so the CRITICAL threshold operates at precision $0.80$ and recall $0.012$ (A5, full evaluation set) --- it is deliberately reserved for unambiguous imminent-collision geometry rather than tuned for F1. (These values correct the pre-revision table, which had reported F1(0.80) from an inconsistent earlier evaluation; the corrected column is reproduced by \texttt{fast\_ablation.py} on the published dataset.) A5 ($\alpha = 0.20$, $\beta = 0.80$) is selected over A2 ($\alpha = 0.50$, $\beta = 0.50$) because of better AUC rank-ordering on the Tier~2 proxy ($0.9869$ vs.\ $0.9842$ on the seed-42 single-run point estimate, the same quantity reported rounded as $0.987$ in Table~\ref{tab:perf}), despite nearly identical single-threshold F1.
 
 \begin{table}[htbp]
@@ -668,7 +789,7 @@ Five configurations were tested (Table~\ref{tab:ablation}); F1 values are report
   \end{tabular}
 \end{table}
 
-\subsection{Sensitivity Analysis}
+\subsection{Sensitivity Analysis}\label{sec:sensitivity}
 The purpose of Fig.~\ref{fig:sensitivity} is to establish the operating envelope of the engine: each panel sweeps one parameter (GPS noise, packet-loss probability, TTC threshold, alert threshold, friction) with all others held at their published values, and reports the resulting detection quality, showing which parameters the system is and is not sensitive to. The system maintains strong performance under parameter variation: robust with GPS noise up to 3.0~m and packet loss up to 20\%.
 
 \begin{figure}[htbp]

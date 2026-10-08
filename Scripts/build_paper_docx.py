@@ -6,14 +6,24 @@ with all figures embedded.
 
 Approach:
   1. Read main.tex.
-  2. Strip the Springer Nature \\documentclass and any class-specific commands
-     (the \\sn-jnl class is not supported by pandoc).
-  3. Replace the class with a vanilla `article` preamble.
-  4. Replace the problematic `\\DeclareMathOperator{\\atan2}` line with a
-     plain math operator definition that pandoc accepts.
-  5. Convert affilations / authors into a simple author block pandoc can parse.
-  6. Pipe through pandoc -> main.docx with `--resource-path=.` so figure
-     paths resolve.
+  2. resolve_cross_refs(): deterministically resolve everything pandoc cannot
+     -- figure/table/equation/section numbers for \\ref, caption prefixes,
+     bracketed [n] citations, and a numbered References section -- and render
+     the equation numbers into the math itself.
+  3. drop_align_markers(): remove the top-level '&' of aligned/align/split.
+  4. strip_for_pandoc(): replace the Springer Nature \\documentclass and the
+     class-specific commands (\\sn-jnl is not supported by pandoc) with a
+     vanilla `article` preamble, rewrite the author/affiliation front matter,
+     and drop booktabs \\addlinespace.
+  5. Pipe through pandoc -> main.docx with `--resource-path=.` so figure paths
+     resolve.
+  6. left_justify_stacked_math(): post-process the .docx so the rows of a
+     multi-line equation are left-justified rather than flush right.
+
+Steps 3, 4 (\\addlinespace) and 6 exist only to work around pandoc conversion
+defects; each is applied to the temp source or the built .docx, never to
+paper/main.tex, so the Overleaf build is unaffected. See the comment on each
+function for the defect it compensates for.
 
 Output:
   paper/main.docx
@@ -25,7 +35,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-PAPER_DIR  = Path('../paper').resolve()
+# Resolved from this file, not the working directory, so the script runs from
+# anywhere.
+PAPER_DIR  = (Path(__file__).resolve().parent.parent / 'paper')
 TEX_IN     = PAPER_DIR / 'main.tex'
 TEX_TMP    = PAPER_DIR / '_main_for_pandoc.tex'
 DOCX_OUT   = PAPER_DIR / 'main.docx'
@@ -189,6 +201,86 @@ def resolve_cross_refs(src: str) -> str:
     return src
 
 
+ALIGN_ENVS = ('aligned', 'align', 'align*', 'split')
+
+# A multi-line display reaches Word as a single-column OMML matrix, and pandoc
+# justifies those rows RIGHT, so the lines of e.g. Eq. (4) end up flush right
+# instead of reading as a left-aligned block. Multi-column matrices (the cases
+# environments) are already emitted left-justified and must not be touched, so
+# the rewrite matches only an <m:mcs> holding exactly one <m:mc>.
+SINGLE_COL_MCS = re.compile(
+    r'(<m:mcs>\s*<m:mc>\s*<m:mcPr>\s*<m:mcJc m:val=")right("\s*/>\s*'
+    r'<m:count m:val="1"\s*/>\s*</m:mcPr>\s*</m:mc>\s*</m:mcs>)')
+
+
+def left_justify_stacked_math(docx_path: Path) -> int:
+    """Rewrite word/document.xml in place so stacked equation rows are
+    left-justified. Returns the number of matrices changed."""
+    import zipfile
+
+    with zipfile.ZipFile(docx_path) as zf:
+        items = [(i, zf.read(i.filename)) for i in zf.infolist()]
+
+    changed = 0
+    out = []
+    for info, data in items:
+        if info.filename == 'word/document.xml':
+            xml = data.decode('utf-8')
+            xml, changed = SINGLE_COL_MCS.subn(r'\1left\2', xml)
+            data = xml.encode('utf-8')
+        out.append((info, data))
+
+    tmp = docx_path.with_suffix('.docx.tmp')
+    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for info, data in out:
+            zf.writestr(info, data)
+    tmp.replace(docx_path)
+    return changed
+
+
+def drop_align_markers(src: str) -> str:
+    """pandoc/texmath leaks the '&' column markers of aligned/align/split into
+    the Word equation as a literal ampersand ("CRI &= clip(...)"), which is
+    what makes multi-line equations look broken in the .docx export. Nested
+    cases/array/matrix markers are converted correctly, so only the markers at
+    the top level of an align-family body are removed, and only in the pandoc
+    temp source -- the LaTeX/Overleaf build keeps its native alignment."""
+    out, pos, dropped = [], 0, 0
+    pat = re.compile(r'\\begin\{(' + '|'.join(re.escape(e) for e in ALIGN_ENVS) + r')\}')
+    while True:
+        m = pat.search(src, pos)
+        if not m:
+            out.append(src[pos:])
+            break
+        env = m.group(1)
+        end_tok = '\\end{' + env + '}'
+        end = src.find(end_tok, m.end())
+        if end == -1:                       # unbalanced; leave the rest alone
+            out.append(src[pos:])
+            break
+        out.append(src[pos:m.end()])
+
+        # Walk the body, tracking nested \begin/\end so that only the markers
+        # belonging to this environment are removed.
+        body, depth, i, buf = src[m.end():end], 0, 0, []
+        while i < len(body):
+            if body.startswith('\\begin{', i):
+                depth += 1
+            elif body.startswith('\\end{', i):
+                depth -= 1
+            elif body[i] == '&' and depth == 0 and (i == 0 or body[i - 1] != '\\'):
+                dropped += 1
+                i += 1
+                continue
+            buf.append(body[i])
+            i += 1
+        out.append(''.join(buf))
+        out.append(end_tok)
+        pos = end + len(end_tok)
+    print(f'  dropped {dropped} align markers from math (OMML readability)')
+    return ''.join(out)
+
+
 def strip_for_pandoc(src: str) -> str:
     """Rewrite the few constructs pandoc cannot parse out of the Springer
     Nature template into vanilla LaTeX that pandoc handles."""
@@ -226,6 +318,15 @@ def strip_for_pandoc(src: str) -> str:
     )
     # Replace any remaining \atan2 macro calls with our new \atan
     src = src.replace(r'\atan2', r'\atan')
+
+    # 1b. booktabs' \addlinespace is a pure vertical-spacing command, but
+    #     pandoc's reader swallows the token that follows it, which silently
+    #     blanks the first cell of the next table row. Drop it from the
+    #     pandoc source; the LaTeX build keeps the spacing.
+    n_als = len(re.findall(r'\\addlinespace(\[[^\]]*\])?', src))
+    src = re.sub(r'\\addlinespace(\[[^\]]*\])?\s*', '', src)
+    if n_als:
+        print(f'  removed {n_als} \\addlinespace spacers (pandoc eats the next cell)')
 
     # 2. Author/affiliation front matter is injected verbatim after \maketitle
     #    (round-1 docx style: author line with superscripts, affiliation
@@ -287,6 +388,7 @@ def main():
     src = resolve_cross_refs(src)
 
     print('Rewriting for pandoc compatibility...')
+    src = drop_align_markers(src)
     src_clean = strip_for_pandoc(src)
     TEX_TMP.write_text(src_clean, encoding='utf-8')
     print(f'  wrote {TEX_TMP}')
@@ -309,6 +411,9 @@ def main():
     print(f'  pandoc stdout: {result.stdout[-500:] if result.stdout else "(empty)"}')
     print(f'  pandoc stderr: {result.stderr[-500:] if result.stderr else "(empty)"}')
     print(f'  wrote {DOCX_OUT}')
+
+    n_just = left_justify_stacked_math(DOCX_OUT)
+    print(f'  left-justified {n_just} stacked equation blocks')
 
     # Clean up intermediate file
     try:

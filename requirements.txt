@@ -10,3 +10,11 @@ plotly==6.5.0
 matplotlib==3.10.8
 imbalanced-learn==0.14.1
 sumolib==1.26.0
+lightgbm==4.6.0
+shap==0.52.0
+
+# Manuscript / review-round tooling (Scripts/build_paper_docx.py,
+# mark_changes_red_round3.py, build_rebuttals_round3.py). pypandoc ships the
+# pandoc binary used to convert paper/main.tex to .docx.
+python-docx==1.2.0
+pypandoc==1.17

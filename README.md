@@ -279,13 +279,53 @@ To reproduce the published results from a clean clone:
    - Expected output: `Outputs/bsd_metrics.csv` with 146,051 rows
 4. `python evaluate_system.py` — generates ROC curves, computes AUC (expected: 0.9869)
 5. `python train_ai_model.py` — trains XGBoost and regenerates `bsd_training_report.json` + `feature_importance.csv`
-6. `python generate_paper_figures.py` — regenerates all 9 publication figures
+6. `python generate_paper_figures.py` — regenerates the data figures into `Outputs/figures/`
+   (the scenario diagram and the Results analysis framework have their own scripts:
+   `generate_scenario_diagram.py` and `generate_results_framework_figure.py`)
 7. `python fast_ablation.py` — reproduces ablation table (Table III in paper)
 8. `python run_multi_seed.py` — runs 5-seed robustness analysis
 
 All random seeds are fixed. Results should be deterministic given identical SUMO and Python versions.
 
 > **Important:** SUMO is not a pip dependency. Install Eclipse SUMO 1.19+ separately and ensure `SUMO_HOME` is set. Results may vary with different SUMO versions due to traffic microsimulation differences.
+
+---
+
+## Review-Round Deliverables
+
+Each review round produces three files, all generated from `paper/main.tex` so the
+LaTeX source stays the single point of truth. From `Scripts/`:
+
+```bash
+# Round 3 (8 October 2026). A later round copies these three scripts,
+# bumps the date, and points the red-marking baseline at this round's paper.
+python generate_results_framework_figure.py   # Fig. 8, the Results analysis framework
+python build_paper_docx.py                    # paper/main.tex -> paper/main.docx
+cp "../paper/main.docx" "../paper/V2V_paper 08-10-26.docx"
+python mark_changes_red_round3.py             # ... -> "V2V_paper 08-10-26_changes_red.docx"
+python build_rebuttals_round3.py              # rebuttals/Reviewer_Comments_Consolidated.docx
+```
+
+| File | Contents |
+|------|----------|
+| `paper/V2V_paper 08-10-26.docx` | The revised manuscript, with every equation as a native Word equation |
+| `paper/V2V_paper 08-10-26_changes_red.docx` | The same manuscript with the round's changes coloured red |
+| `paper/rebuttals/Reviewer_Comments_Consolidated.docx` | Verbatim reviewer comments plus point-by-point responses |
+
+Previous rounds are archived under `paper/rebuttals/round1_archive/` and
+`paper/rebuttals/round2_archive/`; each round's red-marking script diffs against
+the previous round's manuscript, so those archives are build inputs, not just history.
+
+Three pandoc workarounds live in `build_paper_docx.py` and matter if the pipeline
+is ever changed. Its LaTeX reader leaks the `&` column markers of
+`aligned`/`align`/`split` into Word as literal ampersands and flattens the rows
+(`drop_align_markers`), and it swallows the cell that follows a booktabs
+`\addlinespace` (stripped in `strip_for_pandoc`); both are applied to the pandoc
+temp source only, so the Overleaf build keeps them. Its docx writer then
+right-justifies the rows of a multi-line equation, which
+`left_justify_stacked_math` rewrites in the built file. After any change here,
+check the output for literal `&` inside `m:oMath` — that is the signature of a
+multi-line equation arriving in Word broken.
 
 ---
 
