@@ -306,6 +306,16 @@ python mark_changes_red_round3.py             # ... -> "V2V_paper 08-10-26_chang
 python build_rebuttals_round3.py              # rebuttals/Reviewer_Comments_Consolidated.docx
 ```
 
+Each round also produces a second pair from the typeset PDF: compile the Overleaf
+project, export that PDF to Word as `paper/V2V_paper <DD-MM-YY>.docx`, then run
+`mark_changes_red_round3_twocol.py` to red-mark it against the previous round's
+two-column export. That pair matches the submitted PDF; the pandoc pair above is
+the single-column Word build of the same source. The two markers differ by
+necessity: the pandoc build carries real Word equations and is diffed with a
+change whitelist at paragraph granularity, while the PDF export flattens math to
+text and is diffed word by word with a renumbering filter and a moved-block
+rescue pass.
+
 | File | Contents |
 |------|----------|
 | `paper/V2V_paper 08-10-26.docx` | The revised manuscript, with every equation as a native Word equation |
