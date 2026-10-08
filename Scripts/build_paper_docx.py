@@ -298,26 +298,23 @@ def strip_for_pandoc(src: str) -> str:
 \usepackage{geometry}
 \geometry{margin=1in}
 
-\DeclareMathOperator{\arctangtwo}{atan2}
-\newcommand{\atan}{\arctangtwo}
+\DeclareMathOperator{\atantwo}{atan2}
 """
-    # The original preamble runs from \documentclass to \begin{document}.
-    src = re.sub(
-        r'\\documentclass\[.*?\]\{sn-jnl\}.*?(?=\\begin\{document\})',
+    # The original preamble runs from \documentclass to \begin{document}. The
+    # lookahead is anchored to the start of a line so that a comment merely
+    # mentioning \begin{document} does not truncate the replacement.
+    src, n_pre = re.subn(
+        r'\\documentclass\[.*?\]\{sn-jnl\}.*?(?=^\\begin\{document\})',
         lambda m: new_preamble,
         src,
         count=1,
-        flags=re.DOTALL,
+        flags=re.DOTALL | re.MULTILINE,
     )
-    # Remove the standalone \DeclareMathOperator line if pandoc still sees it
-    # (we already replaced it above; this is belt-and-braces).
-    src = re.sub(
-        r'\\DeclareMathOperator\{\\atan2\}\{atan2\}',
-        '',
-        src,
-    )
-    # Replace any remaining \atan2 macro calls with our new \atan
-    src = src.replace(r'\atan2', r'\atan')
+    if n_pre != 1:
+        raise SystemExit('preamble replacement failed: could not match '
+                         r'\documentclass...\begin{document}')
+    # The \atantwo operator is declared by the replacement preamble above; the
+    # original declaration went out with the rest of the sn-jnl preamble.
 
     # 1b. booktabs' \addlinespace is a pure vertical-spacing command, but
     #     pandoc's reader swallows the token that follows it, which silently
@@ -356,12 +353,9 @@ def strip_for_pandoc(src: str) -> str:
         lambda m: '\n\\noindent\\textbf{Keywords:} ' + m.group(1) + '\n',
         src)
 
-    # 7. \maketitle stays; \begin{acknowledgements}/\end{acknowledgements} converted.
-    src = re.sub(r'\\begin\{acknowledgements\}',
-                 r'\\section*{Acknowledgements}', src)
-    src = re.sub(r'\\end\{acknowledgements\}', '', src)
-
-    # 8. \bmhead{...} (Springer-only) -> \subsubsection*{...}
+    # 7. \bmhead{...} (Springer-only) -> \subsubsection*{...}. The paper's
+    #    acknowledgements use \bmhead too, like Springer's own sample article,
+    #    so no separate environment handling is needed.
     src = re.sub(r'\\bmhead\{([^}]+)\}', r'\n\\subsubsection*{\1}\n', src)
 
     # 9. Inject the author block right after \title{...} if not already present.

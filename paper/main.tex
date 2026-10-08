@@ -21,7 +21,10 @@
 \WarningFilter{mathptmx}{There are no bold math fonts}
 
 % ---- Custom math operator ----
-\DeclareMathOperator{\atan2}{atan2}
+% The command name must contain only letters: \atan2 would be read as
+% \atan followed by a stray "2", which TeX then tries to typeset while
+% still in the preamble, giving a "Missing begin document" error.
+\DeclareMathOperator{\atantwo}{atan2}
 
 % ============================================================
 \begin{document}
@@ -172,7 +175,7 @@ The system takes 5 data fields from each nearby vehicle and produces a risk scor
 The 5-field BSM is $\mathrm{BSM} = \{x, y, v, a, d\}$, where $x$ and $y$ are GPS coordinates (converted to metres in a local UTM frame), $v$ is the scalar speed, $a$ is the positive part of the signed acceleration, and $d$ is the positive part of the deceleration. Heading is not transmitted; it is recovered from two consecutive positions using the four-quadrant inverse tangent:
 \begin{equation}
 \label{eq:heading}
-  \theta(t) = \atan2\!\bigl(y(t)-y(t-1),\; x(t)-x(t-1)\bigr)
+  \theta(t) = \atantwo\!\bigl(y(t)-y(t-1),\; x(t)-x(t-1)\bigr)
 \end{equation}
 This means the heading vector is the direction from the previous reported position to the current one, which equals the true heading when the vehicle is moving and the GPS noise is small relative to the displacement between samples. At speeds below 0.5~m/s the displacement between consecutive samples can be smaller than the GPS noise itself, so the heading of Eq.~(\ref{eq:heading}) is held at $\theta(t-1)$ instead of being recomputed --- otherwise GPS jitter would rotate the heading by tens of degrees while the vehicle is essentially stationary. The yaw rate is then $\dot{\theta}(t) = [\theta(t) - \theta(t-1)]/\Delta t$ with $\Delta t = 0.1$~s.
 
@@ -849,9 +852,8 @@ A possible fifth direction, suggested by the reviewer process, is the use of a d
 % ============================================================
 % ACKNOWLEDGEMENTS
 % ============================================================
-\begin{acknowledgements}
+\bmhead{Acknowledgements}
 The authors thank the Eclipse SUMO development team (DLR) for the open-source traffic simulation platform, and OpenStreetMap contributors for the Atal Bridge road network data.
-\end{acknowledgements}
 
 % ============================================================
 % DECLARATIONS
