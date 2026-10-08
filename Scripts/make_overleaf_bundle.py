@@ -33,6 +33,7 @@ OUTZIP = PAPER / 'overleaf.zip'
 
 TEX = 'main.tex'
 CLS = 'sn-jnl.cls'
+BST = 'sn-mathphys-num.bst'   # optional: shipped if present in paper/
 
 README = """\
 Overleaf upload bundle -- V2V blind-spot manuscript
@@ -46,15 +47,11 @@ HOW TO UPLOAD
 Overleaf -> New Project -> Upload Project -> choose paper/overleaf.zip
 Then check Menu -> Main document is set to main.tex.
 
-ABOUT sn-jnl.cls  (read this first)
------------------------------------
-The copy included here declares the three options main.tex uses
-(sn-mathphys-num, Numbered, iicol), but it is a mirror copy, not necessarily
-byte-identical to the one that produced your V2V_paper 17-08-26.pdf.
-
-If your existing Overleaf project still has a sn-jnl.cls that compiled that
-PDF, prefer that one -- it guarantees identical formatting. Just delete the
-sn-jnl.cls from this bundle after uploading and keep yours.
+ABOUT sn-jnl.cls
+----------------
+This is the class from the Overleaf project that compiled the published PDFs,
+so the layout matches what the reviewers have seen. It declares the three
+options main.tex uses: sn-mathphys-num, Numbered, iicol.
 
 Sanity check after the first successful compile: the 17-08-26 build was
 20 pages, two-column. The Round-3 revision adds one page-wide figure (Fig. 8)
@@ -64,10 +61,10 @@ same layout.
 BIBLIOGRAPHY
 ------------
 main.tex uses a manual \\begin{thebibliography} list with 32 \\bibitem entries,
-so BibTeX is not required and no .bst file is needed. The class emits
-\\bibliographystyle{sn-mathphys-num} into the .aux; that is harmless. If
-Overleaf ever complains about a missing style, drop your own
-sn-mathphys-num.bst into the project root.
+so BibTeX is not required to build the reference list. sn-mathphys-num.bst
+(2024/07/19 v1.1) is included anyway because the class emits
+\\bibliographystyle{sn-mathphys-num} into the .aux, and shipping it keeps the
+project self-contained.
 
 IF THE COMPILE FAILS INSIDE sn-jnl.cls
 --------------------------------------
@@ -129,10 +126,14 @@ def main():
     # out with CRLF, and the mirrored class originally shipped CR-only.
     print('  ' + TEX + ': ' + normalise_eol(tex_path, OUTDIR / TEX))
     print('  ' + CLS + ': ' + normalise_eol(cls_path, OUTDIR / CLS))
+    extras = []
+    if (PAPER / BST).exists():
+        print('  ' + BST + ': ' + normalise_eol(PAPER / BST, OUTDIR / BST))
+        extras.append(BST)
     for f in figs:
         shutil.copy2(PAPER / f, OUTDIR / f)
 
-    listing = '\n'.join(f'  {n}' for n in [TEX, CLS, 'README.txt'] + figs)
+    listing = '\n'.join(f'  {n}' for n in [TEX, CLS] + extras + ['README.txt'] + figs)
     (OUTDIR / 'README.txt').write_text(README + listing + '\n', encoding='utf-8')
 
     names = sorted(p.name for p in OUTDIR.iterdir())
