@@ -1,0 +1,120 @@
+{
+  "rows": 146051,
+  "cols": 45,
+  "checks": {
+    "missing_values": "none",
+    "infinite_values": "none",
+    "physical_ranges": {
+      "speed": {
+        "min": 0.0,
+        "max": 64.40521927665247,
+        "violations": 0
+      },
+      "cri_left": {
+        "min": 0.0,
+        "max": 0.910784406665406,
+        "violations": 0
+      },
+      "cri_right": {
+        "min": 0.0,
+        "max": 0.9041730516608286,
+        "violations": 0
+      },
+      "P_left": {
+        "min": 0.0,
+        "max": 0.7566314806721695,
+        "violations": 0
+      },
+      "P_right": {
+        "min": 0.0,
+        "max": 0.7566464274453333,
+        "violations": 0
+      },
+      "R_decel_left": {
+        "min": 0.0,
+        "max": 1.0,
+        "violations": 0
+      },
+      "R_decel_right": {
+        "min": 0.0,
+        "max": 1.0,
+        "violations": 0
+      },
+      "R_ttc_left": {
+        "min": 0.0,
+        "max": 1.0,
+        "violations": 0
+      },
+      "R_ttc_right": {
+        "min": 0.0,
+        "max": 1.0,
+        "violations": 0
+      },
+      "R_intent_left": {
+        "min": 0.0,
+        "max": 0.6,
+        "violations": 0
+      },
+      "R_intent_right": {
+        "min": 0.0,
+        "max": 0.6,
+        "violations": 0
+      },
+      "max_plr": {
+        "min": 0.0,
+        "max": 1.0,
+        "violations": 0
+      },
+      "decel": {
+        "min": 0.0,
+        "max": 9.10448513829806,
+        "violations": 0
+      },
+      "max_gap (rows with targets, signed)": {
+        "min": -11.991010368050866,
+        "max": 295.41250336026053,
+        "violations": 0,
+        "negative_rows_target_alongside": 38027,
+        "rows_no_target": 2
+      }
+    },
+    "duplicate_rows": 0,
+    "constant_columns": [
+      "signals"
+    ],
+    "class_proportions": {
+      "scenario_pct": {
+        "normal": 49.64,
+        "HNR": 31.02,
+        "TSV": 19.34
+      },
+      "critical_rows_cri_ge_080": 54,
+      "alert_level_distribution": {
+        "SAFE": 145377,
+        "WARNING": 663,
+        "CAUTION": 11
+      },
+      "ground_truth_collision_rows": 27
+    },
+    "raw_column_correlations": {
+      "speed~accel": 0.0462,
+      "speed~decel": 0.0163,
+      "speed~max_gap": 0.2404,
+      "speed~rel_speed": 0.0738,
+      "accel~decel": 0.3118,
+      "accel~max_gap": 0.0736,
+      "accel~rel_speed": 0.0015,
+      "decel~max_gap": 0.077,
+      "decel~rel_speed": 0.0555,
+      "max_gap~rel_speed": 0.0909
+    },
+    "vehicles_with_non_monotonic_steps": 0
+  },
+  "notes": [
+    "Negative max_gap values are the signed longitudinal gap while a target is alongside the ego (blind-spot overlap); they are expected and bounded by vehicle length plus zone extent.",
+    "44 rows (<0.05%) exceed 60 m/s; all belong to deliberately injected aggressive scenario vehicles (bsd_demo_*) used by the TSV/HNR hazard injectors.",
+    "The \"signals\" column is constant by design: turn signals are not part of the 5-field BSM and are never consumed by the engine."
+  ],
+  "issues": [],
+  "verdict": "PASS"
+}

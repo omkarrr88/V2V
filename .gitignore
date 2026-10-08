@@ -29,3 +29,6 @@ ARCHITECTURE_FIGURE_SPEC.md
 _audit_figures.py
 audit_script.py
 verify_fixes.py
+
+# Pandoc installer (pandoc.exe is installed in .venv/Scripts/)
+Scripts/pandoc-*.msi

@@ -10,122 +10,122 @@
     "bootstrap_iterations_for_CI": 1000
   },
   "dataset": {
-    "rows_total": 112146,
-    "rows_train": 84109,
-    "rows_test": 28037,
-    "positive_train": 1867,
-    "positive_test": 623,
-    "sumo_collisions_total": 23,
-    "sumo_collisions_test": 4
+    "rows_total": 146051,
+    "rows_train": 109538,
+    "rows_test": 36513,
+    "positive_train": 2599,
+    "positive_test": 866,
+    "sumo_collisions_total": 27,
+    "sumo_collisions_test": 7
   },
   "grid_search_top5_by_auc": [
     {
       "alpha": 0.9,
       "beta": 0.1,
-      "train_auc": 0.9937390640945769,
-      "train_f1_at_060": 0.6155794806839772
+      "train_auc": 0.99281691089037,
+      "train_f1_at_060": 0.6208435617049766
     },
     {
       "alpha": 0.85,
       "beta": 0.15,
-      "train_auc": 0.9936223497437711,
-      "train_f1_at_060": 0.6061776061776062
+      "train_auc": 0.9926832408882178,
+      "train_f1_at_060": 0.6095238095238096
     },
     {
       "alpha": 0.8,
       "beta": 0.2,
-      "train_auc": 0.9934732216144947,
-      "train_f1_at_060": 0.5834428383705651
+      "train_auc": 0.9925207313532811,
+      "train_f1_at_060": 0.5863509749303621
     },
     {
       "alpha": 0.75,
       "beta": 0.25,
-      "train_auc": 0.9932911391514719,
-      "train_f1_at_060": 0.5661887295765256
+      "train_auc": 0.9923195148513806,
+      "train_f1_at_060": 0.5770584095707249
     },
     {
       "alpha": 0.7,
       "beta": 0.3,
-      "train_auc": 0.9930698338673042,
-      "train_f1_at_060": 0.5644622578490314
+      "train_auc": 0.9920745830075385,
+      "train_f1_at_060": 0.5747180451127819
     }
   ],
   "grid_search_top5_by_f1": [
     {
       "alpha": 0.9,
       "beta": 0.1,
-      "train_auc": 0.9937390640945769,
-      "train_f1_at_060": 0.6155794806839772
+      "train_auc": 0.99281691089037,
+      "train_f1_at_060": 0.6208435617049766
     },
     {
       "alpha": 0.85,
       "beta": 0.15,
-      "train_auc": 0.9936223497437711,
-      "train_f1_at_060": 0.6061776061776062
+      "train_auc": 0.9926832408882178,
+      "train_f1_at_060": 0.6095238095238096
     },
     {
       "alpha": 0.8,
       "beta": 0.2,
-      "train_auc": 0.9934732216144947,
-      "train_f1_at_060": 0.5834428383705651
+      "train_auc": 0.9925207313532811,
+      "train_f1_at_060": 0.5863509749303621
     },
     {
       "alpha": 0.75,
       "beta": 0.25,
-      "train_auc": 0.9932911391514719,
-      "train_f1_at_060": 0.5661887295765256
+      "train_auc": 0.9923195148513806,
+      "train_f1_at_060": 0.5770584095707249
     },
     {
-      "alpha": 0.7,
-      "beta": 0.3,
-      "train_auc": 0.9930698338673042,
-      "train_f1_at_060": 0.5644622578490314
+      "alpha": 0.1,
+      "beta": 0.9,
+      "train_auc": 0.9841395270520269,
+      "train_f1_at_060": 0.5747180451127819
     }
   ],
   "selected_weights_by_auc": {
     "alpha": 0.9,
     "beta": 0.1,
     "gamma": 0.0,
-    "train_auc": 0.9937390640945769
+    "train_auc": 0.99281691089037
   },
   "selected_weights_by_f1": {
     "alpha": 0.9,
     "beta": 0.1,
     "gamma": 0.0,
-    "train_f1_at_060": 0.6155794806839772
+    "train_f1_at_060": 0.6208435617049766
   },
   "test_metrics_published_weights": {
-    "auc_proxy": 0.9890307772352378,
-    "f1_at_060": 0.5694164989939637,
-    "f1_at_080": 0.03773584905660377,
-    "precision_at_080": 0.9230769230769231,
-    "recall_at_080": 0.019261637239165328,
-    "auc_sumo_collisions": 0.990422002639746,
-    "n_sumo_collisions": 4,
+    "auc_proxy": 0.9873951670443651,
+    "f1_at_060": 0.607192254495159,
+    "f1_at_080": 0.0228310502283105,
+    "precision_at_080": 1.0,
+    "recall_at_080": 0.011547344110854504,
+    "auc_sumo_collisions": 0.9413794992603955,
+    "n_sumo_collisions": 7,
     "auc_proxy_ci95": [
-      0.9861763891965182,
-      0.9912126381855225
+      0.985488935849525,
+      0.9889902646339748
     ],
     "auc_sumo_ci95": [
-      0.9855642820095566,
-      0.9957554572692252
+      0.8959780465090801,
+      0.978570740143654
     ]
   },
   "test_metrics_selected_weights": {
-    "auc_proxy": 0.993909305282851,
-    "f1_at_060": 0.613614573346117,
-    "f1_at_080": 0.03773584905660377,
-    "precision_at_080": 0.9230769230769231,
-    "recall_at_080": 0.019261637239165328,
-    "auc_sumo_collisions": 0.9892804908500695,
-    "n_sumo_collisions": 4,
+    "auc_proxy": 0.9933516685389083,
+    "f1_at_060": 0.65748031496063,
+    "f1_at_080": 0.0228310502283105,
+    "precision_at_080": 1.0,
+    "recall_at_080": 0.011547344110854504,
+    "auc_sumo_collisions": 0.9388984980942465,
+    "n_sumo_collisions": 7,
     "auc_proxy_ci95": [
-      0.9913498031650353,
-      0.995602549502043
+      0.9918869429717048,
+      0.9944832320358156
     ],
     "auc_sumo_ci95": [
-      0.9836057802614641,
-      0.9956127092309123
+      0.8958344764193693,
+      0.9763875555725726
     ]
   },
   "note": "Both weight sets are evaluated on the SAME untouched test partition. The selected weights were chosen using only training data, so test metrics are a valid generalisation estimate."

@@ -157,7 +157,7 @@ def main():
     X_train_std = scaler.fit_transform(X_train)
     X_test_std  = scaler.transform(X_test)
     lr_clf = LogisticRegression(max_iter=1000, class_weight='balanced',
-                                 multi_class='multinomial', random_state=42, n_jobs=-1)
+                                 random_state=42, n_jobs=-1)
     lr_clf.fit(X_train_std, y_train)
 
     # ---- Evaluate all on same TEST set ----

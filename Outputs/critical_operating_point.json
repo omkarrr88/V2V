@@ -1,0 +1,70 @@
+{
+  "protocol": {
+    "outer_split": "75/25 stratified, random_state=42 (same as ml_baselines_comparison)",
+    "inner_split": "80/20 stratified fit/val from training partition",
+    "smote": "applied to fit portion only",
+    "threshold_rule": "maximise CRITICAL-binary F1 on val; frozen before test"
+  },
+  "results": [
+    {
+      "model": "XGBoost",
+      "threshold": 0.04889490455389023,
+      "val_f1": 0.125,
+      "test_recall_at_tstar": 0.0,
+      "test_precision_at_tstar": 0.0,
+      "test_f1_at_tstar": 0.0,
+      "test_recall_argmax": 0.0,
+      "test_pr_auc_critical": 0.003173474621715691,
+      "screening_threshold": 0.00022698465909343213,
+      "screening_test_recall": 0.8461538461538461,
+      "screening_test_precision": 0.0020014556040756915,
+      "screening_alarm_rate": 0.15052173198586805,
+      "n_test_critical": 13
+    },
+    {
+      "model": "LightGBM",
+      "threshold": 0.022640543830527275,
+      "val_f1": 0.027972027972027972,
+      "test_recall_at_tstar": 0.07692307692307693,
+      "test_precision_at_tstar": 0.005128205128205128,
+      "test_f1_at_tstar": 0.009615384615384616,
+      "test_recall_argmax": 0.0,
+      "test_pr_auc_critical": 0.002615035717939655,
+      "screening_threshold": 0.0004801185486167725,
+      "screening_test_recall": 0.6153846153846154,
+      "screening_test_precision": 0.0019309678976587015,
+      "screening_alarm_rate": 0.11346643661161777,
+      "n_test_critical": 13
+    },
+    {
+      "model": "RandomForest",
+      "threshold": 0.16699917032164358,
+      "val_f1": 0.3333333333333333,
+      "test_recall_at_tstar": 0.0,
+      "test_precision_at_tstar": 0.0,
+      "test_f1_at_tstar": 0.0,
+      "test_recall_argmax": 0.0,
+      "test_pr_auc_critical": 0.0018103625613156127,
+      "screening_threshold": 3.6750856989857204e-05,
+      "screening_test_recall": 0.8461538461538461,
+      "screening_test_precision": 0.001636174326937379,
+      "screening_alarm_rate": 0.18412620162681784,
+      "n_test_critical": 13
+    },
+    {
+      "model": "LogisticRegression",
+      "threshold": 0.04182956834925997,
+      "val_f1": 0.001520623455616803,
+      "test_recall_at_tstar": 0.5384615384615384,
+      "test_precision_at_tstar": 0.000799177988354835,
+      "test_f1_at_tstar": 0.0015959872321021432,
+      "test_recall_argmax": 0.0,
+      "test_pr_auc_critical": 0.0007478955435419912,
+      "screening_threshold": 0.02420158693205634,
+      "screening_test_recall": 1.0,
+      "screening_test_precision": 0.0006946299759551162,
+      "screening_alarm_rate": 0.512557171418399,
+      "n_test_critical": 13
+    }
+  ]
+}

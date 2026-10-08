@@ -34,7 +34,11 @@ plt.rcParams.update({
     'axes.grid': True, 'grid.alpha': 0.3, 'axes.spines.top': False,
     'axes.spines.right': False,
 })
-COLORS = {'math': '#2563EB', 'ai': '#16A34A', 'ttc': '#EA580C', 'static': '#DC2626'}
+# High-contrast, colour-blind-safe palette (Okabe-Ito) — Reviewer 1 Round 2:
+# darker saturated hues + distinct linestyles for print/grayscale readability.
+COLORS = {'math': '#0072B2', 'ai': '#009E73', 'ttc': '#D55E00', 'static': '#000000'}
+# Unified scenario colour mapping used by every per-scenario figure.
+SCENARIO_COLORS = {'normal': '#0072B2', 'TSV': '#D55E00', 'HNR': '#009E73'}
 
 
 def load_metrics():
@@ -59,7 +63,7 @@ def fig_roc(df):
          'XGBoost Hybrid Predictor', COLORS['ai'], '--'),
     ]:
         fpr, tpr, _ = roc_curve(y_true, score)
-        ax.plot(fpr, tpr, color=color, ls=ls, lw=2,
+        ax.plot(fpr, tpr, color=color, ls=ls, lw=2.4,
                 label=f'{label} (AUC = {auc(fpr, tpr):.4f})')
 
     for col_l, col_r, label, color, ls in [
@@ -71,7 +75,7 @@ def fig_roc(df):
             score = np.maximum(df[col_l].map(amap).fillna(0).values,
                                df[col_r].map(amap).fillna(0).values)
             fpr, tpr, _ = roc_curve(y_true, score)
-            ax.plot(fpr, tpr, color=color, ls=ls, lw=2,
+            ax.plot(fpr, tpr, color=color, ls=ls, lw=2.4,
                     label=f'{label} (AUC = {auc(fpr, tpr):.4f})')
 
     ax.plot([0, 1], [0, 1], 'k--', lw=1, alpha=0.5)
@@ -88,13 +92,13 @@ def fig_roc(df):
 def fig_cri_distribution(df):
     cri = df[['cri_left', 'cri_right']].max(axis=1).values
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.hist(cri, bins=50, color='#94A3B8', edgecolor='white', linewidth=0.5)
+    ax.hist(cri, bins=50, color='#334155', edgecolor='white', linewidth=0.5)
     for thresh, label, color in [
-        (Params.THETA_1, f'CAUTION θ₁={Params.THETA_1}', '#F59E0B'),
-        (Params.THETA_2, f'WARNING θ₂={Params.THETA_2}', '#F97316'),
-        (Params.THETA_3, f'CRITICAL θ₃={Params.THETA_3}', '#EF4444'),
+        (Params.THETA_1, f'CAUTION θ₁={Params.THETA_1}', '#B45309'),
+        (Params.THETA_2, f'WARNING θ₂={Params.THETA_2}', '#C2410C'),
+        (Params.THETA_3, f'CRITICAL θ₃={Params.THETA_3}', '#B91C1C'),
     ]:
-        ax.axvline(thresh, color=color, lw=2, ls='--', label=label)
+        ax.axvline(thresh, color=color, lw=2.2, ls='--', label=label)
     ax.set(xlabel='CRI Score', ylabel='Count', title='CRI Score Distribution with Alert Thresholds')
     ax.legend()
     path = FIG_DIR / 'fig2_cri_distribution.png'
@@ -113,9 +117,10 @@ def fig_feature_importance():
 
     df = pd.read_csv(imp_path).sort_values('importance')
     fig, ax = plt.subplots(figsize=(7, 5))
-    bars = ax.barh(df['feature'], df['importance'], color='#3B82F6', edgecolor='white')
+    bars = ax.barh(df['feature'], df['importance'], color='#0072B2', edgecolor='white')
     ax.bar_label(bars, fmt='%.3f', padding=3, fontsize=9)
-    ax.set(xlabel='Feature Importance (XGBoost gain)', title='AI Model Feature Importance')
+    ax.set(xlabel='Gain-based split contribution (normalised)',
+           title='XGBoost Gain-Based Split Contributions')
     path = FIG_DIR / 'fig3_feature_importance.png'
     fig.savefig(path, dpi=300, bbox_inches='tight')
     plt.close(fig)
@@ -135,11 +140,11 @@ def fig_alert_timeline(df):
     means  = [step_groups.get_group(s).mean() for s in steps]
 
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(steps, means, color=COLORS['math'], lw=1.5, alpha=0.8)
-    ax.fill_between(steps, means, alpha=0.15, color=COLORS['math'])
-    ax.axhline(1, color='#F59E0B', ls=':', lw=1, label='CAUTION')
-    ax.axhline(2, color='#F97316', ls=':', lw=1, label='WARNING')
-    ax.axhline(3, color='#EF4444', ls=':', lw=1, label='CRITICAL')
+    ax.plot(steps, means, color=COLORS['math'], lw=1.8)
+    ax.fill_between(steps, means, alpha=0.30, color=COLORS['math'])
+    ax.axhline(1, color='#B45309', ls=':', lw=1.4, label='CAUTION')
+    ax.axhline(2, color='#C2410C', ls=':', lw=1.4, label='WARNING')
+    ax.axhline(3, color='#B91C1C', ls=':', lw=1.4, label='CRITICAL')
     ax.set(xlabel='Simulation Step', ylabel='Mean Alert Level',
            title='Alert Level Evolution During Simulation', ylim=[0, 3.2])
     ax.legend(loc='upper right')
@@ -153,14 +158,14 @@ def fig_alert_timeline(df):
 def fig_risk_components(df):
     fig, axes = plt.subplots(1, 3, figsize=(13, 4))
     cols = [
-        ('R_decel_left',  'R_decel', '#3B82F6', 'Deceleration Risk'),
-        ('R_ttc_left',    'R_ttc',   '#F97316', 'TTC Risk'),
-        ('R_intent_left', 'R_intent','#8B5CF6', 'Intent Risk'),
+        ('R_decel_left',  'R_decel', '#0072B2', 'Deceleration Risk'),
+        ('R_ttc_left',    'R_ttc',   '#D55E00', 'TTC Risk'),
+        ('R_intent_left', 'R_intent','#6A3D9A', 'Intent Risk'),
     ]
     for ax, (col, label, color, title) in zip(axes, cols):
         if col not in df.columns: continue
         data = df[col].dropna().clip(0, 1)
-        ax.hist(data, bins=40, color=color, alpha=0.8, edgecolor='white')
+        ax.hist(data, bins=40, color=color, edgecolor='white')
         ax.set(title=f'{title}\nμ={data.mean():.3f}, σ={data.std():.3f}',
                xlabel=label, ylabel='Count')
     fig.suptitle('Risk Component Distributions (Left Side)', fontsize=13)
@@ -182,21 +187,19 @@ def fig_scenario_comparison(df):
     
     fig, ax = plt.subplots(figsize=(12, 5))
     
-    scenario_colors = {'normal': '#3B82F6', 'TSV': '#EF4444', 'HNR': '#F59E0B'}
-    
     for sc_type in df_plot['scenario_type'].unique():
         sc_df = df_plot[df_plot['scenario_type'] == sc_type]
         if sc_df.empty:
             continue
         step_mean = sc_df.groupby('step')['cri_max'].mean()
-        color = scenario_colors.get(sc_type, '#64748B')
-        ax.plot(step_mean.index, step_mean.values, color=color, lw=1.2, alpha=0.8, label=sc_type)
-        ax.fill_between(step_mean.index, step_mean.values, alpha=0.1, color=color)
-    
+        color = SCENARIO_COLORS.get(sc_type, '#64748B')
+        ax.plot(step_mean.index, step_mean.values, color=color, lw=1.8, label=sc_type)
+        ax.fill_between(step_mean.index, step_mean.values, alpha=0.20, color=color)
+
     # Mark scenario boundaries
-    ax.axhline(Params.THETA_1, color='#F59E0B', ls=':', lw=1, alpha=0.5)
-    ax.axhline(Params.THETA_2, color='#F97316', ls=':', lw=1, alpha=0.5)
-    ax.axhline(Params.THETA_3, color='#EF4444', ls=':', lw=1, alpha=0.5)
+    ax.axhline(Params.THETA_1, color='#B45309', ls=':', lw=1.2, alpha=0.7)
+    ax.axhline(Params.THETA_2, color='#C2410C', ls=':', lw=1.2, alpha=0.7)
+    ax.axhline(Params.THETA_3, color='#B91C1C', ls=':', lw=1.2, alpha=0.7)
     
     ax.set(xlabel='Simulation Step', ylabel='Mean CRI (max side)',
            title='CRI Evolution by Scenario Type')
@@ -340,8 +343,8 @@ def fig_pr_curve(df):
     pos_rate = y_true.mean()
 
     fig, ax = plt.subplots(figsize=(6, 5))
-    ax.plot(recall, precision, 'b-', lw=2, label=f'Physics CRI (AUPRC={auprc:.3f})')
-    ax.axhline(y=pos_rate, color='gray', linestyle='--', lw=1, label=f'Random baseline ({pos_rate:.3f})')
+    ax.plot(recall, precision, color='#0072B2', lw=2.4, label=f'Physics CRI (AUPRC={auprc:.3f})')
+    ax.axhline(y=pos_rate, color='#333333', linestyle='--', lw=1.4, label=f'Random baseline ({pos_rate:.3f})')
     ax.set_xlabel('Recall', fontsize=13)
     ax.set_ylabel('Precision', fontsize=13)
     ax.set_title('Precision-Recall Curve', fontsize=14)
@@ -371,13 +374,13 @@ def fig_cri_timeseries(df):
     cri_max = vdf[['cri_left', 'cri_right']].max(axis=1)
 
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.axhspan(0, 0.30, alpha=0.1, color='green')
-    ax.axhspan(0.30, 0.60, alpha=0.1, color='gold')
-    ax.axhspan(0.60, 0.80, alpha=0.1, color='orange')
-    ax.axhspan(0.80, 1.0, alpha=0.1, color='red')
-    ax.plot(vdf['step'], cri_max, 'b-', lw=1.2)
+    ax.axhspan(0, 0.30, alpha=0.18, color='#2E7D32')
+    ax.axhspan(0.30, 0.60, alpha=0.18, color='#F9A825')
+    ax.axhspan(0.60, 0.80, alpha=0.18, color='#EF6C00')
+    ax.axhspan(0.80, 1.0, alpha=0.18, color='#C62828')
+    ax.plot(vdf['step'], cri_max, color='#0072B2', lw=1.8)
     for thr, lbl in [(0.30, 'CAUTION'), (0.60, 'WARNING'), (0.80, 'CRITICAL')]:
-        ax.axhline(y=thr, color='gray', linestyle=':', lw=0.8, alpha=0.7)
+        ax.axhline(y=thr, color='#333333', linestyle=':', lw=1.0, alpha=0.8)
     ax.set_xlabel('Simulation Step', fontsize=13)
     ax.set_ylabel('CRI', fontsize=13)
     ax.set_title(f'CRI Time-Series for Vehicle {vid}', fontsize=14)
@@ -396,8 +399,9 @@ def fig_calibration(df):
     prob_true, prob_pred = calibration_curve(y_true, cri_max, n_bins=10, strategy='uniform')
 
     fig, ax = plt.subplots(figsize=(5, 5))
-    ax.plot([0, 1], [0, 1], 'k--', lw=1, label='Perfect calibration')
-    ax.plot(prob_pred, prob_true, 'bo-', lw=2, markersize=6, label='Physics CRI')
+    ax.plot([0, 1], [0, 1], 'k--', lw=1.2, label='Perfect calibration')
+    ax.plot(prob_pred, prob_true, color='#0072B2', marker='o', lw=2.4,
+            markersize=7, label='Physics CRI')
     ax.set_xlabel('Mean Predicted CRI', fontsize=13)
     ax.set_ylabel('Fraction of Positives', fontsize=13)
     ax.set_title('Calibration Plot', fontsize=14)
@@ -447,13 +451,12 @@ def fig_speed_cri_scatter(df):
     """Fig 13: Speed vs CRI scatter by scenario."""
     sample = df.sample(n=min(5000, len(df)), random_state=42)
     cri_max = sample[['cri_left', 'cri_right']].max(axis=1)
-    colors = {'normal': '#4285F4', 'HNR': '#EA4335', 'TSV': '#34A853'}
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    for scenario, color in colors.items():
+    for scenario, color in SCENARIO_COLORS.items():
         mask = sample['scenario_type'] == scenario
         ax.scatter(sample.loc[mask, 'speed'], cri_max[mask],
-                   c=color, alpha=0.3, s=8, label=scenario)
+                   c=color, alpha=0.55, s=12, label=scenario)
     ax.set_xlabel('Ego Speed (m/s)', fontsize=13)
     ax.set_ylabel('max(CRI_left, CRI_right)', fontsize=13)
     ax.set_title('Speed vs CRI by Scenario', fontsize=14)

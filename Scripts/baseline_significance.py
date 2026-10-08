@@ -24,7 +24,7 @@ from bsd_utils import compute_ground_truth
 
 METRICS_FILE = '../Outputs/bsd_metrics.csv'
 REPORT_FILE  = '../Outputs/baseline_significance.json'
-N_BOOTSTRAP  = 500    # 500 iterations is sufficient for stable 95% percentile CIs at this n
+N_BOOTSTRAP  = 2000   # 2000 iterations: stable 95% CIs and p-value resolution below 0.001
 
 
 def bootstrap_auc(y, scores, n_boot=N_BOOTSTRAP, seed=42):
