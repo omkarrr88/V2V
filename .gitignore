@@ -32,3 +32,7 @@ verify_fixes.py
 
 # Pandoc installer (pandoc.exe is installed in .venv/Scripts/)
 Scripts/pandoc-*.msi
+
+# Overleaf upload bundle (regenerate: python Scripts/make_overleaf_bundle.py)
+paper/overleaf/
+paper/overleaf.zip

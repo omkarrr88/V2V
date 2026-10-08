@@ -312,6 +312,18 @@ python build_rebuttals_round3.py              # rebuttals/Reviewer_Comments_Cons
 | `paper/V2V_paper 08-10-26_changes_red.docx` | The same manuscript with the round's changes coloured red |
 | `paper/rebuttals/Reviewer_Comments_Consolidated.docx` | Verbatim reviewer comments plus point-by-point responses |
 
+To build the PDF, assemble a self-contained Overleaf project from `paper/`:
+
+```bash
+python make_overleaf_bundle.py   # -> paper/overleaf/ and paper/overleaf.zip
+```
+
+Upload `paper/overleaf.zip` via Overleaf's *New Project → Upload Project*, then
+check *Menu → Main document* is `main.tex`. The bundle is a build output and is
+gitignored; `paper/sn-jnl.cls` is committed because pdflatex cannot find the
+Springer class on its own. The manuscript uses a manual `thebibliography` list,
+so no `.bst` and no BibTeX run are required.
+
 Previous rounds are archived under `paper/rebuttals/round1_archive/` and
 `paper/rebuttals/round2_archive/`; each round's red-marking script diffs against
 the previous round's manuscript, so those archives are build inputs, not just history.

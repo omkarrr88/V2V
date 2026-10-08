@@ -1,0 +1,4 @@
+# Keep LaTeX sources LF so TeX and the Overleaf bundle see consistent line endings
+*.cls text eol=lf
+*.bst text eol=lf
+*.tex text eol=lf
